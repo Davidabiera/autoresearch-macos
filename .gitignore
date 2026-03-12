@@ -18,3 +18,8 @@ AGENTS.md
 
 # Experimental code/artifacts
 dev/
+control/logs/
+control/reports/
+control/state/
+control/supervisor/
+control-probe*/

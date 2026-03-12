@@ -1,0 +1,36 @@
+{"id":"matrix_lr_0046","description":"raise matrix lr to 0.046","assignments":{"MATRIX_LR":"0.046"}}
+{"id":"matrix_lr_0047","description":"raise matrix lr to 0.047","assignments":{"MATRIX_LR":"0.047"}}
+{"id":"matrix_lr_0043","description":"lower matrix lr to 0.043","assignments":{"MATRIX_LR":"0.043"}}
+{"id":"matrix_lr_0048","description":"raise matrix lr to 0.048","assignments":{"MATRIX_LR":"0.048"}}
+{"id":"matrix_lr_0042","description":"lower matrix lr to 0.042","assignments":{"MATRIX_LR":"0.042"}}
+{"id":"unembedding_lr_00425","description":"raise unembedding lr to 0.00425","assignments":{"UNEMBEDDING_LR":"0.00425"}}
+{"id":"unembedding_lr_0045","description":"raise unembedding lr to 0.0045","assignments":{"UNEMBEDDING_LR":"0.0045"}}
+{"id":"unembedding_lr_00475","description":"raise unembedding lr to 0.00475","assignments":{"UNEMBEDDING_LR":"0.00475"}}
+{"id":"unembedding_lr_00375","description":"lower unembedding lr to 0.00375","assignments":{"UNEMBEDDING_LR":"0.00375"}}
+{"id":"unembedding_lr_0035","description":"lower unembedding lr to 0.0035","assignments":{"UNEMBEDDING_LR":"0.0035"}}
+{"id":"weight_decay_021","description":"raise weight decay to 0.21","assignments":{"WEIGHT_DECAY":"0.21"}}
+{"id":"weight_decay_019","description":"lower weight decay to 0.19","assignments":{"WEIGHT_DECAY":"0.19"}}
+{"id":"weight_decay_022","description":"raise weight decay to 0.22","assignments":{"WEIGHT_DECAY":"0.22"}}
+{"id":"weight_decay_018","description":"lower weight decay to 0.18","assignments":{"WEIGHT_DECAY":"0.18"}}
+{"id":"scalar_lr_0525","description":"raise scalar lr to 0.525","assignments":{"SCALAR_LR":"0.525"}}
+{"id":"scalar_lr_055","description":"raise scalar lr to 0.55","assignments":{"SCALAR_LR":"0.55"}}
+{"id":"scalar_lr_0475","description":"lower scalar lr to 0.475","assignments":{"SCALAR_LR":"0.475"}}
+{"id":"scalar_lr_045","description":"lower scalar lr to 0.45","assignments":{"SCALAR_LR":"0.45"}}
+{"id":"embedding_lr_0625","description":"raise embedding lr to 0.625","assignments":{"EMBEDDING_LR":"0.625"}}
+{"id":"embedding_lr_065","description":"raise embedding lr to 0.65","assignments":{"EMBEDDING_LR":"0.65"}}
+{"id":"embedding_lr_0575","description":"lower embedding lr to 0.575","assignments":{"EMBEDDING_LR":"0.575"}}
+{"id":"embedding_lr_055","description":"lower embedding lr to 0.55","assignments":{"EMBEDDING_LR":"0.55"}}
+{"id":"final_lr_frac_00525","description":"raise final lr frac to 0.0525","assignments":{"FINAL_LR_FRAC":"0.0525"}}
+{"id":"final_lr_frac_0055","description":"raise final lr frac to 0.055","assignments":{"FINAL_LR_FRAC":"0.055"}}
+{"id":"final_lr_frac_00475","description":"lower final lr frac to 0.0475","assignments":{"FINAL_LR_FRAC":"0.0475"}}
+{"id":"final_lr_frac_0045","description":"lower final lr frac to 0.045","assignments":{"FINAL_LR_FRAC":"0.045"}}
+{"id":"device_batch_size_4","description":"reduce device batch size to 4","assignments":{"DEVICE_BATCH_SIZE":"4"}}
+{"id":"device_batch_size_2","description":"reduce device batch size to 2","assignments":{"DEVICE_BATCH_SIZE":"2"}}
+{"id":"adam_betas_079_095","description":"change adam betas to (0.79, 0.95)","assignments":{"ADAM_BETAS":"(0.79, 0.95)"}}
+{"id":"adam_betas_081_095","description":"change adam betas to (0.81, 0.95)","assignments":{"ADAM_BETAS":"(0.81, 0.95)"}}
+{"id":"adam_betas_08_096","description":"change adam betas to (0.8, 0.96)","assignments":{"ADAM_BETAS":"(0.8, 0.96)"}}
+{"id":"adam_betas_0775_095","description":"change adam betas to (0.775, 0.95)","assignments":{"ADAM_BETAS":"(0.775, 0.95)"}}
+{"id":"warmdown_ratio_052","description":"lengthen warmdown ratio to 0.52","assignments":{"WARMDOWN_RATIO":"0.52"}}
+{"id":"warmdown_ratio_048","description":"shorten warmdown ratio to 0.48","assignments":{"WARMDOWN_RATIO":"0.48"}}
+{"id":"warmup_ratio_0001","description":"add warmup ratio of 0.001","assignments":{"WARMUP_RATIO":"0.001"}}
+{"id":"warmup_ratio_00025","description":"add warmup ratio of 0.0025","assignments":{"WARMUP_RATIO":"0.0025"}}
