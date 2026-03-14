@@ -587,39 +587,60 @@ def recover_active_experiment(state: dict[str, Any], state_path: Path) -> None:
     recovered = True
     try:
         if log_path and log_path.exists():
-            val_bpb, memory_gb = parse_summary_from_log(log_path)
-            improved = val_bpb < float(state["current_best_val"])
-            status = "keep" if improved else "discard"
-            if description not in parse_results_descriptions(results_path):
-                append_results_row(
-                    results_path,
-                    temp_commit,
-                    format_float(val_bpb),
-                    f"{memory_gb:.1f}",
-                    status,
-                    description,
+            try:
+                val_bpb, memory_gb = parse_summary_from_log(log_path)
+            except RunnerError:
+                if description not in parse_results_descriptions(results_path):
+                    append_results_row(results_path, temp_commit, "0.000000", "0.0", "crash", description)
+                state["attempted"] += 1
+                state["crash_count"] += 1
+                state["completed"].append(
+                    {
+                        "id": active_id,
+                        "commit": temp_commit,
+                        "status": "crash",
+                        "val_bpb": None,
+                        "memory_gb": 0.0,
+                        "description": description,
+                        "reason": "recovered stale active run without summary log",
+                        "log_path": str(log_path),
+                        "recovered": recovered,
+                    }
                 )
-            state["attempted"] += 1
-            if improved:
-                state["keep_count"] += 1
-                state["current_best_commit"] = temp_commit
-                state["current_best_val"] = val_bpb
-            else:
-                state["discard_count"] += 1
                 git_reset_hard(target_root, state["current_best_commit"])
-            state["completed"].append(
-                {
-                    "id": active_id,
-                    "commit": temp_commit,
-                    "status": status,
-                    "val_bpb": round(val_bpb, 6),
-                    "memory_gb": round(memory_gb, 1),
-                    "description": description,
-                    "reason": "recovered from existing log",
-                    "log_path": str(log_path),
-                    "recovered": recovered,
-                }
-            )
+            else:
+                improved = val_bpb < float(state["current_best_val"])
+                status = "keep" if improved else "discard"
+                if description not in parse_results_descriptions(results_path):
+                    append_results_row(
+                        results_path,
+                        temp_commit,
+                        format_float(val_bpb),
+                        f"{memory_gb:.1f}",
+                        status,
+                        description,
+                    )
+                state["attempted"] += 1
+                if improved:
+                    state["keep_count"] += 1
+                    state["current_best_commit"] = temp_commit
+                    state["current_best_val"] = val_bpb
+                else:
+                    state["discard_count"] += 1
+                    git_reset_hard(target_root, state["current_best_commit"])
+                state["completed"].append(
+                    {
+                        "id": active_id,
+                        "commit": temp_commit,
+                        "status": status,
+                        "val_bpb": round(val_bpb, 6),
+                        "memory_gb": round(memory_gb, 1),
+                        "description": description,
+                        "reason": "recovered from existing log",
+                        "log_path": str(log_path),
+                        "recovered": recovered,
+                    }
+                )
         else:
             if description not in parse_results_descriptions(results_path):
                 append_results_row(results_path, temp_commit, "0.000000", "0.0", "crash", description)
