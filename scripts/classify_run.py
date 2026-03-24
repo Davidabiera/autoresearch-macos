@@ -22,10 +22,22 @@ def render_markdown(log_path: Path, payload: dict[str, object]) -> str:
         lines.append(f"- `val_bpb`: `{payload['val_bpb']:.6f}`")
     if payload.get("training_seconds") is not None:
         lines.append(f"- `training_seconds`: `{payload['training_seconds']:.1f}`")
+    if payload.get("startup_seconds") is not None:
+        lines.append(f"- `startup_seconds`: `{payload['startup_seconds']:.1f}`")
+    if payload.get("warmup_seconds") is not None:
+        lines.append(f"- `warmup_seconds`: `{payload['warmup_seconds']:.1f}`")
+    if payload.get("eval_seconds") is not None:
+        lines.append(f"- `eval_seconds`: `{payload['eval_seconds']:.1f}`")
     if payload.get("total_seconds") is not None:
         lines.append(f"- `total_seconds`: `{payload['total_seconds']:.1f}`")
     if payload.get("memory_gb") is not None:
         lines.append(f"- `memory_gb`: `{payload['memory_gb']:.1f}`")
+    if payload.get("last_step") is not None:
+        lines.append(f"- `last_step`: `{payload['last_step']}`")
+    if payload.get("last_step_dt_ms") is not None:
+        lines.append(f"- `last_step_dt_ms`: `{payload['last_step_dt_ms']}`")
+    if payload.get("last_remaining_seconds") is not None:
+        lines.append(f"- `last_remaining_seconds`: `{payload['last_remaining_seconds']}`")
     return "\n".join(lines) + "\n"
 
 

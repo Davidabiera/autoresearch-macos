@@ -59,13 +59,13 @@ def build_payload(target_root: Path, branch: str, control_root: Path | None) -> 
 
 def render_markdown(target_root: Path, context: dict[str, object], payload: dict[str, object]) -> str:
     best = context["best"]
-    best_commit_short = context["best_commit_short"]
     canonical_value = best.val_bpb or 0.0
     head_row = context["head_row"]
     control_state = context["control_state"]
     control_report = context["control_report"]
     handoff_frontier = context["handoff_frontier"]
     branch = str(payload["branch"])
+    best_commit_short = str(payload["current_best_commit"])
 
     lines = [
         f"# Frontier Status: `{branch}`",
@@ -80,9 +80,11 @@ def render_markdown(target_root: Path, context: dict[str, object], payload: dict
         "## Frontier Settings",
         "",
     ]
+    frontier_constants = payload["frontier_constants"]
+    current_constants = payload["current_worktree_constants"]
     for name in KEY_TRAIN_CONSTANTS:
-        expected = payload["frontier_constants"].get(name)  # type: ignore[union-attr]
-        current = payload["current_worktree_constants"].get(name)  # type: ignore[union-attr]
+        expected = frontier_constants.get(name)  # type: ignore[union-attr]
+        current = current_constants.get(name)  # type: ignore[union-attr]
         suffix = ""
         if expected != current:
             suffix = f" (current worktree: `{current}`)"

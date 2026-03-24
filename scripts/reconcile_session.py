@@ -15,7 +15,6 @@ from autoresearch_lib import (
     collect_frontier_context,
     count_non_informative,
     format_constant_value,
-    queue_item_to_dict,
     top_band_results,
 )
 
@@ -162,7 +161,7 @@ def build_run_notes_text(context: dict[str, object], branch: str) -> str:
 def build_output(target_root: Path, branch: str, tag: str, control_root: Path | None) -> dict[str, object]:
     context = collect_frontier_context(target_root, branch, control_root=control_root, tag=tag)
     paths = artifact_paths(target_root, branch, control_root=control_root, tag=tag)
-    payload: dict[str, object] = {
+    return {
         "branch": branch,
         "tag": tag,
         "canonical_frontier": {
@@ -178,18 +177,18 @@ def build_output(target_root: Path, branch: str, tag: str, control_root: Path | 
             "run_notes": str(paths["run_notes"]),
         },
     }
-    return payload
 
 
 def render_markdown(payload: dict[str, object]) -> str:
+    frontier = payload["canonical_frontier"]
     lines = [
         f"# Session Reconciliation: `{payload['branch']}`",
         "",
         "## Canonical Frontier",
         "",
-        f"- Best commit: `{payload['canonical_frontier']['best_commit']}`",
-        f"- Best `val_bpb`: `{payload['canonical_frontier']['best_val']:.6f}`",
-        f"- Current `HEAD`: `{payload['canonical_frontier']['head_commit']}`",
+        f"- Best commit: `{frontier['best_commit']}`",
+        f"- Best `val_bpb`: `{frontier['best_val']:.6f}`",
+        f"- Current `HEAD`: `{frontier['head_commit']}`",
         "",
         "## Stale-Doc Findings",
         "",
@@ -240,8 +239,7 @@ def main() -> None:
         handoff_path.write_text(payload["handoff_text"])
         run_notes_path.write_text(payload["run_notes_text"])
     if args.format == "json":
-        printable = dict(payload)
-        print(json.dumps(printable, indent=2, sort_keys=True))
+        print(json.dumps(payload, indent=2, sort_keys=True))
         return
     print(render_markdown(payload))
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import csv
 import json
+import os
 import re
 import subprocess
 from collections import Counter
@@ -13,8 +14,10 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TARGET_ROOT = ROOT
-DEFAULT_CONTROL_ROOT = ROOT / "worktrees" / "control" / "control"
+DEFAULT_TARGET_ROOT = Path(os.environ.get("AUTORESEARCH_TARGET_ROOT", str(ROOT))).resolve()
+DEFAULT_CONTROL_ROOT = Path(
+    os.environ.get("AUTORESEARCH_CONTROL_ROOT", str(DEFAULT_TARGET_ROOT / "worktrees" / "control" / "control"))
+).resolve()
 KEY_TRAIN_CONSTANTS = (
     "TOTAL_BATCH_SIZE",
     "DEVICE_BATCH_SIZE",
@@ -37,10 +40,24 @@ ALLOWED_ASSIGNMENTS = set(KEY_TRAIN_CONSTANTS) | {
 SUMMARY_PATTERNS = {
     "val_bpb": re.compile(r"^val_bpb:\s+([0-9.]+)$", re.MULTILINE),
     "peak_vram_mb": re.compile(r"^peak_vram_mb:\s+([0-9.]+)$", re.MULTILINE),
+    "startup_seconds": re.compile(r"^startup_seconds:\s+([0-9.]+)$", re.MULTILINE),
+    "warmup_seconds": re.compile(r"^warmup_seconds:\s+([0-9.]+)$", re.MULTILINE),
     "training_seconds": re.compile(r"^training_seconds:\s+([0-9.]+)$", re.MULTILINE),
+    "eval_seconds": re.compile(r"^eval_seconds:\s+([0-9.]+)$", re.MULTILINE),
     "total_seconds": re.compile(r"^total_seconds:\s+([0-9.]+)$", re.MULTILINE),
 }
 RUNNER_TIMEOUT_RE = re.compile(r"RUNNER_TIMEOUT: exceeded ([0-9]+) seconds")
+STEP_PROGRESS_RE = re.compile(
+    r"step\s+(\d{5}).*?dt:\s+([0-9]+)ms.*?remaining:\s*([0-9]+)s"
+)
+STARTUP_MARKERS = (
+    "Environment verified:",
+    "Vocab size:",
+    "Model config:",
+    "Time budget:",
+    "Gradient accumulation steps:",
+)
+EARLY_STALL_MS = 30_000
 HANDOFF_FRONTIER_PATTERNS = {
     "best_commit": re.compile(r"^- Best commit: `([^`]+)`$", re.MULTILINE),
     "best_val": re.compile(r"^- Best `val_bpb`: `([0-9.]+)`$", re.MULTILINE),
@@ -254,23 +271,10 @@ def nearest_clean_losses(rows: list[ResultRow], best_val: float, limit: int = 5)
     return sorted(discards, key=lambda row: (row.val_bpb - best_val, row.val_bpb))[:limit]
 
 
-def keep_rows(rows: list[ResultRow]) -> list[ResultRow]:
-    return [row for row in rows if row.status == "keep" and row.val_bpb is not None]
-
-
-def discard_rows(rows: list[ResultRow]) -> list[ResultRow]:
-    return [row for row in rows if row.status == "discard" and row.val_bpb is not None]
-
-
 def load_json(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text())
-
-
-def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 def parse_handoff_frontier(path: Path) -> dict[str, Any] | None:
@@ -324,27 +328,11 @@ def top_band_results(completed: list[dict[str, Any]], limit: int = 5) -> list[di
     return sorted(informative, key=lambda item: float(item["val_bpb"]))[:limit]
 
 
-def describe_remaining_band(items: list[dict[str, Any]]) -> str | None:
-    if not items:
-        return None
-    buckets: dict[str, list[str]] = {}
-    for item in items[:6]:
-        assignments = item.get("assignments") or {}
-        if not assignments:
-            continue
-        name, value = next(iter(assignments.items()))
-        buckets.setdefault(name, []).append(str(value))
-    if not buckets:
-        return None
-    parts = [f"{name}: {', '.join(values)}" for name, values in buckets.items()]
-    return "; ".join(parts)
-
-
 def parse_queue_file(path: Path) -> list[QueueItem]:
     if not path.exists():
         return []
     items: list[QueueItem] = []
-    for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+    for line in path.read_text().splitlines():
         stripped = line.strip()
         if not stripped:
             continue
@@ -369,11 +357,25 @@ def parse_log_metrics(text: str) -> dict[str, float | None]:
     return metrics
 
 
+def parse_step_progress(text: str) -> list[dict[str, int]]:
+    progress: list[dict[str, int]] = []
+    for step, dt_ms, remaining in STEP_PROGRESS_RE.findall(text):
+        progress.append(
+            {
+                "step": int(step),
+                "dt_ms": int(dt_ms),
+                "remaining_seconds": int(remaining),
+            }
+        )
+    return progress
+
+
 def classify_log(
     text: str,
     control_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metrics = parse_log_metrics(text)
+    step_progress = parse_step_progress(text)
     timeout_match = RUNNER_TIMEOUT_RE.search(text)
     informative = metrics["val_bpb"] is not None
     status_class = "unknown-crash"
@@ -382,7 +384,10 @@ def classify_log(
     reason = "log did not match any known completion or failure pattern"
 
     if informative:
+        startup_seconds = metrics["startup_seconds"]
+        warmup_seconds = metrics["warmup_seconds"]
         training_seconds = metrics["training_seconds"]
+        eval_seconds = metrics["eval_seconds"]
         total_seconds = metrics["total_seconds"]
         has_large_overrun = (
             training_seconds is not None
@@ -396,10 +401,15 @@ def classify_log(
             if timeout_match:
                 reason = f"summary fields are present, but the runner still recorded a timeout after {timeout_match.group(1)} seconds"
             else:
-                reason = (
-                    f"training completed in {training_seconds:.1f}s, but total runtime expanded to "
-                    f"{total_seconds:.1f}s"
-                )
+                phase_bits: list[str] = []
+                if startup_seconds is not None:
+                    phase_bits.append(f"startup {startup_seconds:.1f}s")
+                if warmup_seconds is not None:
+                    phase_bits.append(f"warmup {warmup_seconds:.1f}s")
+                if eval_seconds is not None:
+                    phase_bits.append(f"eval {eval_seconds:.1f}s")
+                detail = f" ({', '.join(phase_bits)})" if phase_bits else ""
+                reason = f"training completed in {training_seconds:.1f}s, but total runtime expanded to {total_seconds:.1f}s{detail}"
         else:
             status_class = "completed"
             issue_scope = "experiment-specific"
@@ -411,14 +421,43 @@ def classify_log(
             timeout_count = sum(
                 1 for item in control_state.get("completed", []) if classify_completed_item(item) == "timeout"
             )
-        if timeout_count >= 3:
-            issue_scope = "runner-specific"
-            suggested_action = "queue-adjustment"
+        repeated_timeout = timeout_count >= 3
+        if step_progress:
+            last = step_progress[-1]
+            max_dt_ms = max(item["dt_ms"] for item in step_progress)
+            if last["remaining_seconds"] <= 1:
+                status_class = "late-timeout"
+                issue_scope = "runner-specific"
+                suggested_action = "queue-adjustment"
+                reason = (
+                    f"runner timeout fired after the training budget was exhausted; "
+                    f"last observed step {last['step']} ended with remaining={last['remaining_seconds']}s"
+                )
+            elif last["step"] <= 5 and max_dt_ms >= EARLY_STALL_MS:
+                status_class = "early-step-stall"
+                issue_scope = "runner-specific" if repeated_timeout else "unknown"
+                suggested_action = "queue-adjustment" if repeated_timeout else "retry"
+                reason = (
+                    f"runner timeout followed an early training stall; "
+                    f"max observed step time was {max_dt_ms / 1000.0:.1f}s by step {last['step']}"
+                )
+            else:
+                status_class = "watchdog-timeout"
+                issue_scope = "runner-specific" if repeated_timeout else "unknown"
+                suggested_action = "queue-adjustment" if repeated_timeout else "retry"
+                reason = (
+                    f"runner timeout marker found without summary fields ({timeout_match.group(1)} second limit); "
+                    f"last observed step {last['step']} still had remaining={last['remaining_seconds']}s"
+                )
         else:
-            issue_scope = "unknown"
-            suggested_action = "retry"
-        status_class = "watchdog-timeout"
-        reason = f"runner timeout marker found without summary fields ({timeout_match.group(1)} second limit)"
+            if any(marker in text for marker in STARTUP_MARKERS):
+                status_class = "startup-hang"
+                reason = "runner timeout fired after startup output appeared, but the training loop never logged a step"
+            else:
+                status_class = "startup-hang"
+                reason = "runner timeout fired before the training loop produced any observable progress"
+            issue_scope = "runner-specific" if repeated_timeout else "unknown"
+            suggested_action = "queue-adjustment" if repeated_timeout else "retry"
     else:
         lowered = text.lower()
         if any(marker in lowered for marker in OOM_MARKERS):
@@ -437,7 +476,7 @@ def classify_log(
             suggested_action = "retry"
             reason = "log contains a traceback or exception without a recognized root cause"
 
-    payload = {
+    payload: dict[str, Any] = {
         "status_class": status_class,
         "informative": informative,
         "val_bpb": metrics["val_bpb"],
@@ -447,6 +486,15 @@ def classify_log(
         "suggested_action": suggested_action,
         "issue_scope": issue_scope,
     }
+    for key in ("startup_seconds", "warmup_seconds", "eval_seconds"):
+        if metrics[key] is not None:
+            payload[key] = metrics[key]
+    if step_progress:
+        payload["step_count"] = len(step_progress)
+        payload["last_step"] = step_progress[-1]["step"]
+        payload["last_step_dt_ms"] = step_progress[-1]["dt_ms"]
+        payload["last_remaining_seconds"] = step_progress[-1]["remaining_seconds"]
+        payload["max_step_dt_ms"] = max(item["dt_ms"] for item in step_progress)
     if metrics["peak_vram_mb"] is not None:
         payload["peak_vram_mb"] = metrics["peak_vram_mb"]
         payload["memory_gb"] = round(metrics["peak_vram_mb"] / 1024.0, 1)
