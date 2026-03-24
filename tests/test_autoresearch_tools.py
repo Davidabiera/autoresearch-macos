@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts"))
+CONTROL_ROOT = ROOT / "worktrees" / "control" / "control"
+
+from autoresearch_lib import classify_log  # noqa: E402
+from build_queue import build_queue  # noqa: E402
+from frontier_status import build_payload  # noqa: E402
+from reconcile_session import build_output  # noqa: E402
+
+
+class AutoresearchToolTests(unittest.TestCase):
+    def test_frontier_status_reports_canonical_best_and_current_handoff(self) -> None:
+        payload = build_payload(ROOT, "autoresearch/mar10", CONTROL_ROOT)
+        self.assertEqual(payload["current_best_commit"], "5b486fb")
+        self.assertAlmostEqual(payload["current_best_val"], 1.386688, places=6)
+        self.assertFalse(any(flag["artifact"] == "handoff" for flag in payload["coherence_flags"]))
+
+    def test_timeout_only_log_classifies_as_startup_hang(self) -> None:
+        payload = classify_log("RUNNER_TIMEOUT: exceeded 600 seconds\n", control_state=None)
+        self.assertEqual(payload["status_class"], "startup-hang")
+        self.assertFalse(payload["informative"])
+
+    def test_completed_long_log_is_not_blind_crash(self) -> None:
+        log_path = CONTROL_ROOT / "logs" / "mar10" / "weight_decay_022.log"
+        payload = classify_log(log_path.read_text(errors="replace"))
+        self.assertTrue(payload["informative"])
+        self.assertIn(payload["status_class"], {"completed", "post-train-overrun"})
+
+    def test_late_timeout_log_classifies_as_late_timeout(self) -> None:
+        payload = classify_log(
+            "\rstep 00285 (95.9%) | loss: 3.985036 | lrm: 0.13 | dt: 207736ms | tok/sec: 157 | "
+            "mfu: 0.0% | epoch: 1 | remaining: 0s    \nRUNNER_TIMEOUT: exceeded 600 seconds\n"
+        )
+        self.assertEqual(payload["status_class"], "late-timeout")
+        self.assertEqual(payload["last_remaining_seconds"], 0)
+
+    def test_early_step_stall_log_classifies_as_early_step_stall(self) -> None:
+        log_path = CONTROL_ROOT / "logs" / "mar10" / "embedding_lr_0625.log"
+        payload = classify_log(log_path.read_text(errors="replace"))
+        self.assertEqual(payload["status_class"], "early-step-stall")
+        self.assertEqual(payload["last_step"], 1)
+
+    def test_queue_planner_starts_with_expected_unresolved_candidate(self) -> None:
+        queue = build_queue(ROOT, "autoresearch/mar10", "optimizer-micro", 6, CONTROL_ROOT)
+        self.assertGreaterEqual(len(queue), 1)
+        self.assertEqual(queue[0]["id"], "adam_betas_08_096")
+        self.assertEqual(queue[0]["description"], "change adam betas to (0.8, 0.96)")
+        self.assertEqual(len({item["description"] for item in queue}), len(queue))
+
+    def test_reconciler_regenerates_current_handoff_text(self) -> None:
+        payload = build_output(ROOT, "autoresearch/mar10", "mar10", CONTROL_ROOT)
+        self.assertIn("Best commit: `5b486fb`", payload["handoff_text"])
+        self.assertIn("Current best commit: `5b486fb`", payload["run_notes_text"])
+
+
+if __name__ == "__main__":
+    unittest.main()

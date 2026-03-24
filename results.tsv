@@ -1,0 +1,61 @@
+commit	val_bpb	memory_gb	status	description
+814dc55	1.447119	0.0	keep	baseline
+72a5f2b	1.965557	0.0	discard	increase depth to 6
+fbb1d57	1.402182	0.0	keep	reduce total batch size to 32768
+c3d864d	1.404766	0.0	discard	shorten warmdown ratio to 0.3
+1a693c2	1.403206	0.0	discard	lower matrix lr to 0.035
+71804ff	1.395468	0.0	keep	raise matrix lr to 0.045
+012019d	1.398821	0.0	discard	lower weight decay to 0.1
+c22c546	1.401598	0.0	discard	lower embedding lr to 0.5
+08d1dcd	1.422114	0.0	discard	add warmup ratio of 0.02
+33557c2	1.396161	0.0	discard	raise matrix lr to 0.05
+d4405c1	1.412259	0.0	discard	lower unembedding lr to 0.003
+14dfec5	1.404114	0.0	discard	raise unembedding lr to 0.005
+b11e958	1.404287	0.0	discard	change adam betas to (0.85, 0.95)
+4068fa1	1.395652	0.0	discard	set final lr frac to 0.1
+30a4507	1.401963	0.0	discard	lower weight decay to 0.15
+f967f3c	1.405763	0.0	discard	change adam betas to (0.825, 0.95)
+9837e67	1.393572	0.0	keep	set final lr frac to 0.05
+1d0f677	1.395900	0.0	discard	lower final lr frac to 0.025
+3716980	1.394921	0.0	discard	raise final lr frac to 0.075
+6a9099a	1.396012	0.0	discard	lower weight decay to 0.175
+7868df1	1.399596	0.0	discard	lower final lr frac to 0.04
+d057589	1.394738	0.0	discard	raise final lr frac to 0.06
+68eba62	1.402610	0.0	discard	shorten warmdown ratio to 0.45
+e80fda7	1.399982	0.0	discard	lengthen warmdown ratio to 0.55
+041dbcd	NA	NA	crash	lower total batch size to 16384 (assertion)
+ba30ea6	1.394027	0.0	discard	reduce device batch size to 8
+90f1966	1.427855	0.0	discard	add warmup ratio of 0.005
+8842fba	1.394424	0.0	discard	lower matrix lr to 0.044
+f19ef7f	1.387882	0.0	keep	raise matrix lr to 0.046
+9fab8f4	1.393558	0.0	discard	raise matrix lr to 0.047
+4d17416	1.392811	0.0	discard	lower matrix lr to 0.043
+551b586	1.393546	0.0	discard	raise matrix lr to 0.048
+3ebc6cf	1.398442	0.0	discard	lower matrix lr to 0.042
+3e4400d	1.398853	0.0	discard	raise unembedding lr to 0.00425
+02a89ab	1.395257	0.0	discard	raise unembedding lr to 0.0045
+5b486fb	1.386688	0.0	keep	raise unembedding lr to 0.00475
+ee2a4cc	1.391437	0.0	discard	lower unembedding lr to 0.00375
+e6f685b	1.390232	0.0	discard	lower unembedding lr to 0.004625
+7f5e16e	1.392895	0.0	discard	raise unembedding lr to 0.004875
+b16925d	1.402170	0.0	discard	lower unembedding lr to 0.0035
+e634d49	1.389167	0.0	discard	raise weight decay to 0.21
+d4abce5	1.388756	0.0	discard	lower weight decay to 0.19
+fc7c5e8	1.386732	0.0	discard	raise weight decay to 0.22
+cff3339	1.388004	0.0	discard	lower weight decay to 0.18
+ffe5a60	1.392434	0.0	discard	raise scalar lr to 0.525
+38f26e5	1.393486	0.0	discard	raise scalar lr to 0.55
+6dbcf54	1.388378	0.0	discard	lower scalar lr to 0.475
+c98d9b9	0.000000	0.0	crash	lower scalar lr to 0.45
+cae86f8	0.000000	0.0	crash	raise embedding lr to 0.625
+dd5dce5	0.000000	0.0	crash	raise embedding lr to 0.65
+af28c97	0.000000	0.0	crash	lower embedding lr to 0.575
+011045e	0.000000	0.0	crash	lower embedding lr to 0.55
+bfa1457	0.000000	0.0	crash	raise final lr frac to 0.0525
+bcfdd85	0.000000	0.0	crash	raise final lr frac to 0.055
+5af376c	0.000000	0.0	crash	lower final lr frac to 0.0475
+33e9c12	0.000000	0.0	crash	lower final lr frac to 0.045
+d054c17	0.000000	0.0	crash	reduce device batch size to 4
+3be7426	0.000000	0.0	crash	reduce device batch size to 2
+a46627b	0.000000	0.0	crash	change adam betas to (0.79, 0.95)
+cdbb0db	0.000000	0.0	crash	change adam betas to (0.81, 0.95)

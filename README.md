@@ -49,6 +49,16 @@ Hi have a look at program.md and let's kick off a new experiment! let's do the s
 
 The `program.md` file is essentially a super lightweight "skill".
 
+## Reviewing an overnight
+
+After an overnight batch finishes, generate the canonical evaluation report with:
+
+```bash
+uv run python scripts/overnight_evaluate.py --branch autoresearch/<tag>
+```
+
+The command writes `reports/overnight_eval_<tag>.md` and treats `results.tsv` as the ledger of record, using the control state/report and any narrative Markdown only for coherence checks and mismatch detection.
+
 ## Project structure
 
 ```

@@ -17,6 +17,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+STALL_TRACE_THRESHOLD_MS = float(os.environ.get("STALL_TRACE_THRESHOLD_MS", "0"))
+
 def verify_macos_env():
     if sys.platform != "darwin":
         raise RuntimeError(f"This script requires macOS with Metal. Detected platform: {sys.platform}")
@@ -577,6 +579,8 @@ x, y, epoch = next(train_loader)  # prefetch first batch
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
+if STALL_TRACE_THRESHOLD_MS > 0:
+    print(f"Stall trace threshold: {STALL_TRACE_THRESHOLD_MS:.0f}ms")
 
 # Schedules (all based on progress = training_time / TIME_BUDGET)
 
@@ -602,6 +606,7 @@ def get_weight_decay(progress):
 
 t_start_training = time.time()
 smooth_train_loss = 0
+warmup_training_time = 0
 total_training_time = 0
 step = 0
 
@@ -614,13 +619,20 @@ def sync_device(device_type):
 while True:
     sync_device(device_type)
     t0 = time.time()
+    step_fwdbwd_time = 0.0
+    step_next_batch_time = 0.0
     for micro_step in range(grad_accum_steps):
+        t_micro_start = time.time()
         with autocast_ctx:
             loss = model(x, y)
         train_loss = loss.detach()
         loss = loss / grad_accum_steps
         loss.backward()
+        t_after_backward = time.time()
         x, y, epoch = next(train_loader)
+        t_after_next_batch = time.time()
+        step_fwdbwd_time += t_after_backward - t_micro_start
+        step_next_batch_time += t_after_next_batch - t_after_backward
 
     # Progress and schedules
     progress = min(total_training_time / TIME_BUDGET, 1.0)
@@ -632,8 +644,10 @@ while True:
         if group['kind'] == 'muon':
             group["momentum"] = muon_momentum
             group["weight_decay"] = muon_weight_decay
+    t_before_optimizer = time.time()
     optimizer.step()
     model.zero_grad(set_to_none=True)
+    t_after_optimizer = time.time()
 
     train_loss_f = train_loss.item()
 
@@ -645,9 +659,13 @@ while True:
     sync_device(device_type)
     t1 = time.time()
     dt = t1 - t0
+    step_optimizer_time = t_after_optimizer - t_before_optimizer
+    step_sync_tail_time = t1 - t_after_optimizer
 
     if step > 10:
         total_training_time += dt
+    else:
+        warmup_training_time += dt
 
     # Logging
     ema_beta = 0.9
@@ -659,6 +677,14 @@ while True:
     remaining = max(0, TIME_BUDGET - total_training_time)
 
     print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
+    if STALL_TRACE_THRESHOLD_MS > 0 and dt * 1000 >= STALL_TRACE_THRESHOLD_MS:
+        print(
+            f"\nstall_trace step {step:05d} | fwdbwd_ms: {step_fwdbwd_time * 1000:.0f} | "
+            f"next_batch_ms: {step_next_batch_time * 1000:.0f} | "
+            f"optimizer_ms: {step_optimizer_time * 1000:.0f} | "
+            f"sync_tail_ms: {step_sync_tail_time * 1000:.0f}",
+            flush=True,
+        )
 
     # GC management (Python's GC causes ~500ms stalls)
     if step == 0:
@@ -679,13 +705,16 @@ print()  # newline after \r training log
 total_tokens = step * TOTAL_BATCH_SIZE
 
 # Final eval
+t_eval_start = time.time()
 model.eval()
 with autocast_ctx:
     val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+t_eval_end = time.time()
 
 # Final summary
 t_end = time.time()
 startup_time = t_start_training - t_start
+eval_time = t_eval_end - t_eval_start
 steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - 10) / total_training_time / H100_BF16_PEAK_FLOPS if total_training_time > 0 else 0
 if device_type == "cuda":
     peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
@@ -694,7 +723,10 @@ else:
 
 print("---")
 print(f"val_bpb:          {val_bpb:.6f}")
+print(f"startup_seconds:  {startup_time:.1f}")
+print(f"warmup_seconds:   {warmup_training_time:.1f}")
 print(f"training_seconds: {total_training_time:.1f}")
+print(f"eval_seconds:     {eval_time:.1f}")
 print(f"total_seconds:    {t_end - t_start:.1f}")
 print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
 print(f"mfu_percent:      {steady_state_mfu:.2f}")

@@ -1,0 +1,6 @@
+{"assignments": {"ADAM_BETAS": "(0.8, 0.96)"}, "description": "change adam betas to (0.8, 0.96)", "id": "adam_betas_08_096"}
+{"assignments": {"ADAM_BETAS": "(0.775, 0.95)"}, "description": "change adam betas to (0.775, 0.95)", "id": "adam_betas_0775_095"}
+{"assignments": {"WARMDOWN_RATIO": "0.52"}, "description": "lengthen warmdown ratio to 0.52", "id": "warmdown_ratio_052"}
+{"assignments": {"WARMDOWN_RATIO": "0.48"}, "description": "shorten warmdown ratio to 0.48", "id": "warmdown_ratio_048"}
+{"assignments": {"WARMUP_RATIO": "0.001"}, "description": "add warmup ratio of 0.001", "id": "warmup_ratio_0001"}
+{"assignments": {"WARMUP_RATIO": "0.0025"}, "description": "add warmup ratio of 0.0025", "id": "warmup_ratio_00025"}
