@@ -1,0 +1,7 @@
+interface:
+  display_name: "Autoresearch Frontier Guard"
+  short_description: "Guard and verify run frontier state"
+  default_prompt: "Use $autoresearch-frontier-guard to verify the canonical frontier and execution guardrails for this repo."
+
+policy:
+  allow_implicit_invocation: false

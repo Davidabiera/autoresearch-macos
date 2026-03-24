@@ -1,0 +1,7 @@
+interface:
+  display_name: "Autoresearch Session Reconciler"
+  short_description: "Regenerate coherent handoff artifacts"
+  default_prompt: "Use $autoresearch-session-reconciler to rebuild derived handoff notes from the canonical autoresearch artifacts."
+
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Autoresearch Timeout Triage"
+  short_description: "Classify failed or long run logs"
+  default_prompt: "Use $autoresearch-timeout-triage to classify this autoresearch run log and recommend retry, discard, or queue adjustment."
+
+policy:
+  allow_implicit_invocation: false

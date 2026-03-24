@@ -1,0 +1,7 @@
+interface:
+  display_name: "Autoresearch Queue Planner"
+  short_description: "Generate the next safe experiment queue"
+  default_prompt: "Use $autoresearch-queue-planner to build the next deduped experiment queue for this autoresearch branch."
+
+policy:
+  allow_implicit_invocation: false
