@@ -123,12 +123,14 @@ def artifact_paths(
     return {
         "tag": resolved_tag,
         "results": target_root / "results.tsv",
+        "results_snapshot": resolved_control_root / "state" / f"results_{resolved_tag}.tsv",
         "handoff": target_root / f"HANDOFF_{resolved_tag}.md",
         "run_notes": target_root / f"RUN_NOTES_{resolved_tag}.md",
         "beta_report": target_root / f"BETA_REPORT_{resolved_tag}.md",
         "canonical_eval": target_root / "reports" / f"overnight_eval_{resolved_tag}.md",
         "control_root": resolved_control_root,
         "control_state": resolved_control_root / "state" / f"overnight_{resolved_tag}.json",
+        "gated_results": resolved_control_root / "state" / f"gated_results_{resolved_tag}.jsonl",
         "control_report": resolved_control_root / "reports" / f"overnight_{resolved_tag}.md",
         "control_queue": resolved_control_root / "queues" / f"{resolved_tag}_overnight.jsonl",
     }
@@ -348,6 +350,68 @@ def parse_queue_file(path: Path) -> list[QueueItem]:
     return items
 
 
+def parse_gated_results(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw_line in path.read_text().splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        data = json.loads(stripped)
+        val_bpb = data.get("val_bpb")
+        memory_gb = data.get("memory_gb")
+        payload = {
+            "id": str(data.get("id") or ""),
+            "description": str(data.get("description") or ""),
+            "commit": str(data.get("commit") or ""),
+            "status": str(data.get("status") or ""),
+            "status_class": str(data.get("status_class") or ""),
+            "informative": bool(data.get("informative")) or val_bpb is not None or str(data.get("status") or "") in {"keep", "discard"},
+            "suppress_planner": data.get("suppress_planner"),
+            "val_bpb": None if val_bpb in {None, "", "NA"} else float(val_bpb),
+            "memory_gb": None if memory_gb in {None, "", "NA"} else float(memory_gb),
+        }
+        rows.append(payload)
+    return rows
+
+
+def gated_result_is_final(item: dict[str, Any]) -> bool:
+    if item.get("suppress_planner") is not None:
+        return bool(item["suppress_planner"])
+    if bool(item.get("informative")):
+        return True
+    return str(item.get("status_class") or "") in {"config-invalid", "resource-oom"}
+
+
+def gated_result_metadata(gated_results: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+    ids: set[str] = set()
+    descriptions: set[str] = set()
+    for item in gated_results:
+        if not gated_result_is_final(item):
+            continue
+        if item.get("id"):
+            ids.add(str(item["id"]))
+        if item.get("description"):
+            descriptions.add(str(item["description"]))
+    return ids, descriptions
+
+
+def filter_queue_items(
+    queue_items: list[dict[str, Any]],
+    blocked_ids: set[str],
+    blocked_descriptions: set[str],
+) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    for item in queue_items:
+        item_id = str(item.get("id") or "")
+        description = str(item.get("description") or "")
+        if item_id in blocked_ids or description in blocked_descriptions:
+            continue
+        filtered.append(queue_item_to_dict(item))
+    return filtered
+
+
 def parse_log_metrics(text: str) -> dict[str, float | None]:
     metrics: dict[str, float | None] = {key: None for key in SUMMARY_PATTERNS}
     for key, pattern in SUMMARY_PATTERNS.items():
@@ -503,13 +567,21 @@ def classify_log(
     return payload
 
 
-def existing_queue_metadata(control_state: dict[str, Any] | None, queue_path: Path | None = None) -> tuple[set[str], set[str]]:
+def existing_queue_metadata(
+    control_state: dict[str, Any] | None,
+    queue_path: Path | None = None,
+    gated_results: list[dict[str, Any]] | None = None,
+) -> tuple[set[str], set[str]]:
     ids: set[str] = set()
     descriptions: set[str] = set()
     if queue_path is not None and queue_path.exists():
         for item in parse_queue_file(queue_path):
             ids.add(item.id)
             descriptions.add(item.description)
+    if gated_results:
+        gated_ids, gated_descriptions = gated_result_metadata(gated_results)
+        ids.update(gated_ids)
+        descriptions.update(gated_descriptions)
     if control_state:
         for item in control_state.get("resolved_queue", []):
             if item.get("id"):
@@ -556,7 +628,8 @@ def collect_frontier_context(
     tag: str | None = None,
 ) -> dict[str, Any]:
     paths = artifact_paths(target_root.resolve(), branch, control_root=control_root, tag=tag)
-    rows = parse_results(paths["results"])
+    results_path = paths["results"] if Path(paths["results"]).exists() else paths["results_snapshot"]
+    rows = parse_results(Path(results_path))
     best = best_result(rows)
     best_commit_short = maybe_short_commit(target_root, best.commit) or best.commit
     repo_branch = current_branch(target_root)
@@ -565,14 +638,18 @@ def collect_frontier_context(
     control_state = load_json(paths["control_state"])
     control_report = parse_control_report(paths["control_report"])
     handoff_frontier = parse_handoff_frontier(paths["handoff"])
+    gated_results = parse_gated_results(paths["gated_results"])
+    gated_ids, gated_descriptions = gated_result_metadata(gated_results)
     best_train_constants = read_commit_train_constants(target_root, best.commit)
     current_train_constants = parse_python_constants(target_root / "train.py")
     unresolved_queue: list[dict[str, Any]] = []
     if control_state:
         queue_index = int(control_state.get("queue_index", 0))
         unresolved_queue = [queue_item_to_dict(item) for item in control_state.get("resolved_queue", [])[queue_index:]]
+    fresh_unresolved_queue = filter_queue_items(unresolved_queue, gated_ids, gated_descriptions)
     return {
         "paths": {key: str(value) if isinstance(value, Path) else value for key, value in paths.items()},
+        "results_path": str(results_path),
         "tag": str(paths["tag"]),
         "rows": rows,
         "best": best,
@@ -584,9 +661,13 @@ def collect_frontier_context(
         "control_state": control_state,
         "control_report": control_report,
         "handoff_frontier": handoff_frontier,
+        "gated_results": gated_results,
+        "gated_suppressed_ids": gated_ids,
+        "gated_suppressed_descriptions": gated_descriptions,
         "best_train_constants": best_train_constants,
         "current_train_constants": current_train_constants,
         "unresolved_queue": unresolved_queue,
+        "fresh_unresolved_queue": fresh_unresolved_queue,
         "nearest_losses": nearest_clean_losses(rows, best.val_bpb or 0.0),
         "git_status_lines": git_status_lines(target_root),
     }
@@ -727,7 +808,7 @@ def coherence_flags(context: dict[str, Any], target_root: Path, branch: str) -> 
             }
         )
 
-    remaining = context["unresolved_queue"]
+    remaining = context["fresh_unresolved_queue"]
     seen_descriptions: set[str] = set()
     for item in remaining:
         assignments = item.get("assignments", {})

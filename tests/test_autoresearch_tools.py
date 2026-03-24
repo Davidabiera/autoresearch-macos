@@ -21,7 +21,11 @@ class AutoresearchToolTests(unittest.TestCase):
         payload = build_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT)
         self.assertEqual(payload["current_best_commit"], "5b486fb")
         self.assertAlmostEqual(payload["current_best_val"], 1.386688, places=6)
-        self.assertFalse(any(flag["artifact"] == "handoff" for flag in payload["coherence_flags"]))
+        self.assertTrue(payload["head_matches_frontier"])
+        self.assertTrue(payload["execution_ready"])
+        self.assertTrue(str(payload["artifacts"]["results"]).endswith("results_mar10.tsv"))
+        self.assertGreaterEqual(payload["gated_result_count"], 6)
+        self.assertIsNone(payload["recommended_next_candidate"])
 
     def test_timeout_only_log_classifies_as_startup_hang(self) -> None:
         payload = classify_log("RUNNER_TIMEOUT: exceeded 600 seconds\n", control_state=None)
@@ -48,11 +52,17 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(payload["status_class"], "early-step-stall")
         self.assertEqual(payload["last_step"], 1)
 
-    def test_queue_planner_starts_with_expected_unresolved_candidate(self) -> None:
+    def test_optimizer_micro_band_is_exhausted_after_gated_suppression(self) -> None:
         queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "optimizer-micro", 6, CONTROL_ROOT)
-        self.assertGreaterEqual(len(queue), 1)
-        self.assertEqual(queue[0]["id"], "adam_betas_08_096")
-        self.assertEqual(queue[0]["description"], "change adam betas to (0.8, 0.96)")
+        self.assertEqual(queue, [])
+
+    def test_weight_decay_ridge_band_starts_with_expected_candidates(self) -> None:
+        queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "weight-decay-ridge", 6, CONTROL_ROOT)
+        self.assertGreaterEqual(len(queue), 2)
+        self.assertEqual(queue[0]["id"], "weight_decay_0225")
+        self.assertEqual(queue[0]["description"], "raise weight decay to 0.225")
+        self.assertEqual(queue[1]["id"], "weight_decay_023")
+        self.assertEqual(queue[1]["description"], "raise weight decay to 0.23")
         self.assertEqual(len({item["description"] for item in queue}), len(queue))
 
     def test_reconciler_regenerates_current_handoff_text(self) -> None:

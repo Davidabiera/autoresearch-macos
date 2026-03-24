@@ -28,6 +28,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from autoresearch_lib import gated_result_metadata, parse_gated_results
+
 
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent
 ROOT = Path(os.environ.get("AUTORESEARCH_ROOT", str(DEFAULT_ROOT))).resolve()
@@ -35,6 +37,14 @@ TRAIN_PATH = ROOT / "train.py"
 PREPARE_PATH = ROOT / "prepare.py"
 RESULTS_PATH = ROOT / "results.tsv"
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
+
+
+def default_control_root(root: Path) -> Path:
+    candidate = root / "worktrees" / "control" / "control"
+    return candidate if candidate.exists() else root
+
+
+CONTROL_ROOT = Path(os.environ.get("AUTORESEARCH_CONTROL_ROOT", str(default_control_root(ROOT)))).resolve()
 
 ALLOWED_ASSIGNMENTS = {
     "TOTAL_BATCH_SIZE",
@@ -153,6 +163,26 @@ def parse_results_descriptions(results_path: Path) -> set[str]:
     return descriptions
 
 
+def gated_results_path(tag: str) -> Path:
+    return CONTROL_ROOT / "state" / f"gated_results_{tag}.jsonl"
+
+
+def gated_results_tag(default_tag: str) -> str:
+    return os.environ.get("AUTORESEARCH_GATED_RESULTS_TAG", default_tag)
+
+
+def parse_gated_result_descriptions(path: Path) -> set[str]:
+    _, descriptions = gated_result_metadata(parse_gated_results(path))
+    return descriptions
+
+
+def append_gated_result(tag: str, payload: dict[str, Any]) -> None:
+    path = gated_results_path(gated_results_tag(tag))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
 def default_paths(branch: str) -> tuple[str, Path, Path, Path]:
     tag = branch.split("/", 1)[1] if "/" in branch else branch
     state_path = ROOT / "state" / f"overnight_{tag}.json"
@@ -211,7 +241,7 @@ def seed_resolved_queue(
     skipped: list[dict[str, str]] = []
     for item in queue_items:
         if item.description in existing_descriptions:
-            skipped.append({"id": item.id, "reason": "description already exists in results.tsv"})
+            skipped.append({"id": item.id, "reason": "description already exists in results.tsv or gated results"})
             continue
         resolved.append(asdict(item))
     if len(resolved) > 50:
@@ -281,6 +311,35 @@ def resolve_train_command() -> list[str]:
     if VENV_PYTHON.exists():
         return [str(VENV_PYTHON), str(TRAIN_PATH)]
     return [sys.executable, str(TRAIN_PATH)]
+
+
+def ensure_torch_available(command: list[str]) -> None:
+    if len(command) < 2 or Path(command[1]) != TRAIN_PATH:
+        return
+    if not Path(command[0]).name.startswith("python"):
+        return
+    probe = subprocess.run(
+        [command[0], "-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('torch') else 1)"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    if probe.returncode == 0:
+        return
+    if not VENV_PYTHON.exists():
+        hint = (
+            f"target worktree has no venv at {VENV_PYTHON}; "
+            "launch the runner with an interpreter that already has torch or set AUTORESEARCH_TRAIN_CMD."
+        )
+    elif Path(command[0]) != VENV_PYTHON:
+        hint = f"launch the runner with {VENV_PYTHON} or set AUTORESEARCH_TRAIN_CMD."
+    else:
+        hint = "the selected venv is missing torch; repair that environment before resuming."
+    stderr = probe.stderr.strip() or probe.stdout.strip() or "torch module not found"
+    raise RunnerError(
+        f"selected train interpreter cannot import torch: {command[0]}\n"
+        f"detail: {stderr}\n{hint}"
+    )
 
 
 def terminate_process_group(proc: subprocess.Popen[str], grace_seconds: float = 5.0) -> None:
@@ -372,7 +431,9 @@ def run_training(log_path: Path, timeout_seconds: int) -> tuple[int, str | None]
 def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path: Path, log_dir: Path) -> dict[str, Any]:
     queue_path = Path(args.queue)
     queue_items = load_queue_file(queue_path)
-    existing_descriptions = parse_results_descriptions(RESULTS_PATH)
+    existing_descriptions = parse_results_descriptions(RESULTS_PATH) | parse_gated_result_descriptions(
+        gated_results_path(gated_results_tag(tag))
+    )
     resolved_queue, skipped = seed_resolved_queue(queue_items, existing_descriptions)
     return {
         "branch": args.branch,
@@ -537,8 +598,9 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
 
         git_reset_hard(state["current_best_commit"])
         current_descriptions = parse_results_descriptions(RESULTS_PATH)
+        current_descriptions.update(parse_gated_result_descriptions(gated_results_path(gated_results_tag(state["tag"]))))
         if item["description"] in current_descriptions:
-            runtime_skip(state, item, "description already exists in results.tsv", state_path)
+            runtime_skip(state, item, "description already exists in results.tsv or gated results", state_path)
             continue
 
         before = TRAIN_PATH.read_text()
@@ -555,6 +617,20 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         valid, invalid_reason = validate_runtime_divisibility(train_constants, prepare_constants)
         if not valid:
             append_results_row(commit, "0.000000", "0.0", "crash", f"{item['description']} ({invalid_reason})")
+            append_gated_result(
+                state["tag"],
+                {
+                    "id": item["id"],
+                    "commit": commit,
+                    "description": item["description"],
+                    "informative": False,
+                    "reason": invalid_reason,
+                    "status": "crash",
+                    "status_class": "config-invalid",
+                    "suppress_planner": True,
+                    "val_bpb": None,
+                },
+            )
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(
@@ -578,6 +654,20 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         returncode, run_error = run_training(log_path, args.timeout_seconds)
         if returncode != 0:
             append_results_row(commit, "0.000000", "0.0", "crash", item["description"])
+            append_gated_result(
+                state["tag"],
+                {
+                    "id": item["id"],
+                    "commit": commit,
+                    "description": item["description"],
+                    "informative": False,
+                    "reason": run_error or f"train exited with code {returncode}",
+                    "status": "crash",
+                    "status_class": "runner-crash",
+                    "suppress_planner": False,
+                    "val_bpb": None,
+                },
+            )
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(
@@ -602,6 +692,20 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             val_bpb, memory_gb = parse_summary_from_log(log_path)
         except RunnerError as exc:
             append_results_row(commit, "0.000000", "0.0", "crash", item["description"])
+            append_gated_result(
+                state["tag"],
+                {
+                    "id": item["id"],
+                    "commit": commit,
+                    "description": item["description"],
+                    "informative": False,
+                    "reason": str(exc),
+                    "status": "crash",
+                    "status_class": "summary-missing",
+                    "suppress_planner": False,
+                    "val_bpb": None,
+                },
+            )
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(
@@ -625,6 +729,20 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         improved = val_bpb < float(state["current_best_val"])
         status = "keep" if improved else "discard"
         append_results_row(commit, format_float(val_bpb), f"{memory_gb:.1f}", status, item["description"])
+        append_gated_result(
+            state["tag"],
+            {
+                "id": item["id"],
+                "commit": commit,
+                "description": item["description"],
+                "informative": True,
+                "memory_gb": round(memory_gb, 1),
+                "status": status,
+                "status_class": "completed",
+                "suppress_planner": True,
+                "val_bpb": round(val_bpb, 6),
+            },
+        )
         state["attempted"] += 1
         if improved:
             state["keep_count"] += 1
@@ -669,6 +787,7 @@ def main() -> int:
     if current_branch() != args.branch:
         raise RunnerError(f"expected branch {args.branch}, found {current_branch()}")
     ensure_allowed_git_state()
+    ensure_torch_available(resolve_train_command())
     state, state_path, report_path, log_dir = load_or_init_state(args)
     if args.dry_run:
         print_dry_run(state)

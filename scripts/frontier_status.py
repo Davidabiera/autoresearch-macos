@@ -24,7 +24,7 @@ def build_payload(target_root: Path, branch: str, control_root: Path | None) -> 
     best = context["best"]
     best_commit_short = context["best_commit_short"]
     paths = artifact_paths(target_root, branch, control_root=control_root, tag=context["tag"])
-    next_candidate = context["unresolved_queue"][0] if context["unresolved_queue"] else None
+    next_candidate = context["fresh_unresolved_queue"][0] if context["fresh_unresolved_queue"] else None
     flags = coherence_flags(context, target_root, branch)
     execution_ready = not any(flag["severity"] == "error" for flag in flags)
     control_counts = count_non_informative(context["control_state"])
@@ -41,13 +41,15 @@ def build_payload(target_root: Path, branch: str, control_root: Path | None) -> 
         "rollback_target_commit": best_commit_short,
         "coherence_flags": flags,
         "recommended_next_candidate": next_candidate,
-        "remaining_queue_count": len(context["unresolved_queue"]),
+        "remaining_queue_count": len(context["fresh_unresolved_queue"]),
+        "gated_result_count": len(context["gated_results"]),
         "execution_ready": execution_ready,
         "artifacts": {
-            "results": str(paths["results"]),
+            "results": str(context["results_path"]),
             "handoff": str(paths["handoff"]),
             "run_notes": str(paths["run_notes"]),
             "control_state": str(paths["control_state"]),
+            "gated_results": str(paths["gated_results"]),
             "control_report": str(paths["control_report"]),
             "canonical_eval": str(paths["canonical_eval"]),
         },
@@ -76,6 +78,7 @@ def render_markdown(target_root: Path, context: dict[str, object], payload: dict
         f"- Best `val_bpb`: `{canonical_value:.6f}`",
         f"- Current `HEAD`: `{context['head_commit']}`",
         f"- Execution ready: `{str(payload['execution_ready']).lower()}`",
+        f"- Gated results recorded: `{payload['gated_result_count']}`",
         "",
         "## Frontier Settings",
         "",

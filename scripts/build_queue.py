@@ -35,16 +35,25 @@ FALLBACK_TEMPLATES: dict[str, list[QueueItem]] = {
         make_queue_item("WEIGHT_DECAY", "0.18", "lower weight decay to 0.18"),
         make_queue_item("SCALAR_LR", "0.475", "lower scalar lr to 0.475"),
     ],
+    "weight-decay-ridge": [
+        make_queue_item("WEIGHT_DECAY", "0.225", "raise weight decay to 0.225"),
+        make_queue_item("WEIGHT_DECAY", "0.23", "raise weight decay to 0.23"),
+        make_queue_item("WEIGHT_DECAY", "0.215", "raise weight decay to 0.215"),
+        make_queue_item("WEIGHT_DECAY", "0.235", "raise weight decay to 0.235"),
+        make_queue_item("SCALAR_LR", "0.4875", "lower scalar lr to 0.4875"),
+        make_queue_item("SCALAR_LR", "0.4625", "lower scalar lr to 0.4625"),
+    ],
 }
 
 
 def select_candidates(context: dict[str, object], band: str) -> list[dict[str, object]]:
-    unresolved = context["unresolved_queue"]
+    unresolved = context["fresh_unresolved_queue"]
     if band == "optimizer-micro":
         return list(unresolved)
     group_keys = {
         "cadence": {"TOTAL_BATCH_SIZE", "DEVICE_BATCH_SIZE"},
         "stability": {"WEIGHT_DECAY", "SCALAR_LR", "WARMDOWN_RATIO", "WARMUP_RATIO", "FINAL_LR_FRAC"},
+        "weight-decay-ridge": {"WEIGHT_DECAY", "SCALAR_LR"},
     }[band]
     return [
         item
@@ -66,6 +75,7 @@ def build_queue(
     existing_ids, existing_queue_descriptions = existing_queue_metadata(
         context["control_state"],
         queue_path=Path(paths["control_queue"]),
+        gated_results=context["gated_results"],
     )
     selected: list[dict[str, object]] = []
     seen_descriptions: set[str] = set()
@@ -119,7 +129,11 @@ def render_markdown(branch: str, band: str, queue: list[dict[str, object]]) -> s
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a safe next experiment queue.")
     parser.add_argument("--branch", required=True, help="Branch to inspect, e.g. autoresearch/mar10")
-    parser.add_argument("--band", choices=("optimizer-micro", "cadence", "stability"), default="optimizer-micro")
+    parser.add_argument(
+        "--band",
+        choices=("optimizer-micro", "cadence", "stability", "weight-decay-ridge"),
+        default="optimizer-micro",
+    )
     parser.add_argument("--max-items", type=int, default=6)
     parser.add_argument("--out", help="Optional JSONL output path")
     parser.add_argument("--format", choices=("json", "md"), default="md")
