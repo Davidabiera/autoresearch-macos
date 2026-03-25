@@ -1,0 +1,18 @@
+Environment verified: macOS detected with Metal (MPS) hardware acceleration available.
+
+Environment verified: macOS detected with Metal (MPS) hardware acceleration available.
+
+Vocab size: 8,192
+Model config: {'sequence_len': 2048, 'vocab_size': 8192, 'n_layer': 4, 'n_head': 2, 'n_kv_head': 2, 'n_embd': 256, 'window_pattern': 'L'}
+Parameter counts:
+  wte                     : 2,097,152
+  value_embeds            : 4,194,304
+  lm_head                 : 2,097,152
+  transformer_matrices    : 3,145,856
+  scalars                 : 8
+  total                   : 11,534,472
+Estimated FLOPs per token: 5.662387e+07
+Scaling AdamW LRs by 1/sqrt(256/768) = 1.732051
+Time budget: 300s
+Gradient accumulation steps: 1
+step 00000 (0.0%) | loss: 9.010973 | lrm: 1.00 | dt: 25394ms | tok/sec: 1,290 | mfu: 0.0% | epoch: 1 | remaining: 300s    step 00001 (0.0%) | loss: 9.096700 | lrm: 1.00 | dt: 80153ms | tok/sec: 408 | mfu: 0.0% | epoch: 1 | remaining: 300s    step 00002 (0.0%) | loss: 9.017067 | lrm: 1.00 | dt: 87244ms | tok/sec: 375 | mfu: 0.0% | epoch: 1 | remaining: 300s    step 00003 (0.0%) | loss: 8.727071 | lrm: 1.00 | dt: 110718ms | tok/sec: 295 | mfu: 0.0% | epoch: 1 | remaining: 300s    step 00004 (0.0%) | loss: 8.444300 | lrm: 1.00 | dt: 110062ms | tok/sec: 297 | mfu: 0.0% | epoch: 1 | remaining: 300s    step 00005 (0.0%) | loss: 8.224300 | lrm: 1.00 | dt: 90407ms | tok/sec: 362 | mfu: 0.0% | epoch: 1 | remaining: 300s    step 00006 (0.0%) | loss: 8.034774 | lrm: 1.00 | dt: 84621ms | tok/sec: 387 | mfu: 0.0% | epoch: 1 | remaining: 300s    

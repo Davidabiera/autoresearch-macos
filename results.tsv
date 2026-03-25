@@ -1,1 +1,4 @@
 commit	val_bpb	memory_gb	status	description
+1cdbc21	1.389503	0.0	keep	baseline
+e9f7896	0.000000	0.0	crash	raise weight decay to 0.2195
+3f47684	1.501397	0.0	discard	raise matrix lr to 0.047
