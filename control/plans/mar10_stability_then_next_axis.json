@@ -1,0 +1,70 @@
+{
+  "best_commit": "5b486fb",
+  "best_val": 1.386688,
+  "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
+  "execution_root": "/private/tmp/autoresearch-execution-baseline",
+  "max_stage_chain": {
+    "overnight": 3,
+    "tonight": 2
+  },
+  "plan_id": "mar10_stability_then_next_axis",
+  "stages": [
+    {
+      "id": "dedicated_repeatability",
+      "kind": "repeatability",
+      "on_failure": {
+        "action": "stop",
+        "reason": "environment investigation required"
+      },
+      "on_success": {
+        "branch": "repeatability_next_stage"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_repeatability_dedicated_session.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "repeatability_gate",
+      "timeout_seconds": 750
+    },
+    {
+      "id": "weight_decay_confirmation",
+      "kind": "exploration",
+      "max_experiments": 2,
+      "on_failure": {
+        "action": "stop",
+        "reason": "stage 2 instability"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "tonight autonomy boundary reached after clean confirmation canary"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_weight_decay_confirmation.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "clean_stage",
+      "timeout_seconds": 750
+    },
+    {
+      "id": "scalar_first_canary",
+      "kind": "exploration",
+      "max_experiments": 2,
+      "on_failure": {
+        "action": "stop",
+        "reason": "stage 2 instability"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "tonight autonomy boundary reached after clean scalar canary"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_scalar_first_canary.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "clean_stage",
+      "timeout_seconds": 750
+    }
+  ],
+  "tag": "mar10",
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /private/tmp/autoresearch-execution-baseline/train.py"
+}
