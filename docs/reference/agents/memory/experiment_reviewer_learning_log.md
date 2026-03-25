@@ -59,3 +59,42 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: none
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260325-144957_autoresearch-mar24-night_fbc7ac9_21af6c2]
+- Parent workflow: overnight experiment loop with post-run reviewer handoff
+- Trigger: completed run with valid summary metrics after a one-line unembedding learning-rate increase
+- Inputs used: program.md, README.md, current train.py, last commit 21af6c2, run.log, results.tsv, prepare.py
+- Output delivered: keep verdict with one strict TSV row and one bounded next-step recommendation
+- What worked: the run completed cleanly, improved val_bpb versus the kept baseline, and stayed operationally stable on the current macOS/MPS path
+- Friction: memory evidence remains weak because peak_vram_mb is non-informative on this MPS path
+- Uncertainty: low uncertainty on the keep verdict; low-to-medium uncertainty on memory interpretation only
+- Reusable pattern: when a one-line hyperparameter increase on a previously winning axis yields a clear val_bpb improvement with no platform-risk signal, keep and advance the frontier
+- Proposed dossier change: none
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260325-160238_autoresearch-mar24-night_21af6c2_76defde]
+- Parent workflow: overnight experiment loop with post-run reviewer handoff after restart reconstruction
+- Trigger: completed run with valid summary metrics after a second bounded unembedding learning-rate increase
+- Inputs used: program.md, README.md, current train.py, last commit 76defde, run.log, results.tsv, prepare.py
+- Output delivered: keep verdict with one strict TSV row and one bounded next-step recommendation
+- What worked: the run completed cleanly, improved val_bpb from 1.384808 to 1.382862, and preserved stable throughput on the current macOS/MPS path
+- Friction: memory evidence remains weak because peak_vram_mb is still non-informative on this MPS path
+- Uncertainty: low uncertainty on the keep verdict; low-to-medium uncertainty only on memory interpretation
+- Reusable pattern: when consecutive bounded increases on the same winning hyperparameter axis continue to improve val_bpb, keep stepping in that direction until the gain flattens or reverses
+- Proposed dossier change: none
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260325-161704_autoresearch-mar24-night_76defde_fb177dc]
+- Parent workflow: overnight experiment loop with bounded follow-up probe after a restart-resumed keep
+- Trigger: completed run with valid summary metrics after raising unembedding learning rate one more step beyond the new frontier
+- Inputs used: program.md, README.md, current train.py, last commit fb177dc, run.log, results.tsv, prepare.py
+- Output delivered: discard verdict with one strict TSV row and one bounded next-step recommendation
+- What worked: the run completed cleanly and provided a decisive comparison that brackets the local optimum on the tested axis
+- Friction: memory evidence remains weak because peak_vram_mb is non-informative on the current MPS path
+- Uncertainty: low uncertainty on the discard verdict; the regression from 1.382862 to 1.384670 is materially above noise at this local scale
+- Reusable pattern: when a second consecutive increase on a winning scalar axis reverses the gain, treat the prior step as the local frontier and stop pushing further in that direction
+- Proposed dossier change: none
+- Proposed AGENTS or skill change: none
+- Confidence: high
