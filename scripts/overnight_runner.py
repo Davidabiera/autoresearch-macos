@@ -389,19 +389,34 @@ def ensure_torch_available(command: list[str]) -> None:
 def terminate_process_group(proc: subprocess.Popen[str], grace_seconds: float = 5.0) -> None:
     if proc.poll() is not None:
         return
+    terminated_via_group = False
     try:
         os.killpg(proc.pid, signal.SIGTERM)
+        terminated_via_group = True
     except ProcessLookupError:
         return
+    except PermissionError:
+        try:
+            proc.terminate()
+        except (PermissionError, ProcessLookupError):
+            return
     try:
         proc.wait(timeout=grace_seconds)
         return
     except subprocess.TimeoutExpired:
         pass
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
+        if terminated_via_group:
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
     except ProcessLookupError:
         return
+    except PermissionError:
+        try:
+            proc.kill()
+        except (PermissionError, ProcessLookupError):
+            return
     proc.wait()
 
 
@@ -767,6 +782,8 @@ def build_ledger_entry(
     ):
         if classification.get(key) is not None:
             entry[key] = classification.get(key)
+    if classification.get("num_steps") is not None:
+        entry["num_steps"] = int(classification["num_steps"])
     return entry
 
 
@@ -792,6 +809,8 @@ def build_completed_entry(
     for key in ("startup_seconds", "warmup_seconds", "training_seconds", "eval_seconds", "total_seconds"):
         if classification.get(key) is not None:
             entry[key] = classification[key]
+    if classification.get("num_steps") is not None:
+        entry["num_steps"] = int(classification["num_steps"])
     return entry
 
 

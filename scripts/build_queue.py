@@ -46,8 +46,6 @@ FALLBACK_TEMPLATES: dict[str, list[QueueItem]] = {
     "scalar-first": [
         make_queue_item("SCALAR_LR", "0.4875", "lower scalar lr to 0.4875"),
         make_queue_item("SCALAR_LR", "0.48125", "lower scalar lr to 0.48125"),
-        make_queue_item("SCALAR_LR", "0.475", "lower scalar lr to 0.475"),
-        make_queue_item("SCALAR_LR", "0.46875", "lower scalar lr to 0.46875"),
     ],
     "unembedding-followup": [
         make_queue_item("UNEMBEDDING_LR", "0.0047", "lower unembedding lr to 0.0047"),

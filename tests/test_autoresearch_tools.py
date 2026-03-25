@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,11 +15,44 @@ CONTROL_ROOT = WORKSPACE_ROOT / "worktrees" / "control" / "control"
 from autoresearch_lib import classify_log  # noqa: E402
 from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
+from overnight_runner import terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
-from session_status import build_payload as build_session_payload  # noqa: E402
+from session_status import (  # noqa: E402
+    build_payload as build_session_payload,
+    repeatability_branching_decision,
+)
 
 
 class AutoresearchToolTests(unittest.TestCase):
+    def test_terminate_process_group_falls_back_to_direct_kill(self) -> None:
+        class DummyProc:
+            pid = 123
+
+            def __init__(self) -> None:
+                self.terminate_called = 0
+                self.kill_called = 0
+                self.wait_calls = 0
+
+            def poll(self) -> None:
+                return None
+
+            def terminate(self) -> None:
+                self.terminate_called += 1
+
+            def kill(self) -> None:
+                self.kill_called += 1
+
+            def wait(self, timeout: float | None = None) -> None:
+                self.wait_calls += 1
+                if self.wait_calls == 1:
+                    raise subprocess.TimeoutExpired(cmd="dummy", timeout=timeout)
+
+        dummy = DummyProc()
+        with mock.patch("overnight_runner.os.killpg", side_effect=PermissionError()):
+            terminate_process_group(dummy)
+        self.assertEqual(dummy.terminate_called, 1)
+        self.assertEqual(dummy.kill_called, 1)
+
     def test_frontier_status_reports_canonical_best_and_current_handoff(self) -> None:
         payload = build_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT)
         self.assertEqual(payload["current_best_commit"], "5b486fb")
@@ -81,9 +116,7 @@ class AutoresearchToolTests(unittest.TestCase):
 
     def test_scalar_first_band_starts_with_expected_candidates(self) -> None:
         queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "scalar-first", 4, CONTROL_ROOT)
-        self.assertGreaterEqual(len(queue), 2)
-        self.assertEqual(queue[0]["id"], "scalar_lr_04875")
-        self.assertEqual(queue[1]["id"], "scalar_lr_048125")
+        self.assertEqual([item["id"] for item in queue], ["scalar_lr_04875", "scalar_lr_048125"])
 
     def test_reconciler_regenerates_current_handoff_text(self) -> None:
         payload = build_output(WORKSPACE_ROOT, "autoresearch/mar10", "mar10", CONTROL_ROOT)
@@ -94,7 +127,26 @@ class AutoresearchToolTests(unittest.TestCase):
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
         self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
         self.assertTrue(payload["recommended_next_action"])
-        self.assertIn("runtime/MPS forensics", payload["recommended_next_action"])
+
+    def test_repeatability_branching_uses_material_win_threshold(self) -> None:
+        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        items = [
+            {"id": "frontier_repeat_a", "val_bpb": 1.3900, "status_class": "post-train-overrun", "num_steps": 340},
+            {"id": "frontier_repeat_b", "val_bpb": 1.3905, "status_class": "post-train-overrun", "num_steps": 339},
+            {"id": "weight_decay_repeat_022_a", "val_bpb": 1.3882, "status_class": "post-train-overrun", "num_steps": 341},
+            {"id": "weight_decay_repeat_022_b", "val_bpb": 1.3881, "status_class": "post-train-overrun", "num_steps": 340},
+        ]
+        action = repeatability_branching_decision(context, items)
+        self.assertIn("weight_decay_confirmation", action)
+
+    def test_repeatability_branching_rejects_truncated_runs(self) -> None:
+        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        items = [
+            {"id": "frontier_repeat_a", "val_bpb": 2.244121, "status_class": "post-train-overrun", "num_steps": 14},
+            {"id": "frontier_repeat_b", "val_bpb": 1.392134, "status_class": "post-train-overrun", "num_steps": 342},
+        ]
+        action = repeatability_branching_decision(context, items)
+        self.assertIn("backend/environment investigation", action)
 
 
 if __name__ == "__main__":

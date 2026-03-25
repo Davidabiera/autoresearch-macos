@@ -54,6 +54,24 @@ Interpretation:
 - the process entered a severe early-step slowdown inside the training workload itself
 - because the same frontier config reran normally in `frontier_repeat_b`, the current issue is reproducibility/runtime stability, not a deterministic hyperparameter defect
 
+## Clean Baseline Signal Probe
+
+A later single-item clean-worktree signal probe reproduced the same failure family even after the runner and worktree were cleaned:
+
+- worktree: `codex/frontier-baseline-stability-mar10`
+- queue item: `frontier_repeat_clean_c`
+- early step timings observed before completion:
+  - step `0`: `51.481s`
+  - step `1`: `77.740s`
+  - step `2`: `71.106s`
+
+Interpretation:
+
+- the current instability reproduces even from a clean disposable worktree
+- that strengthens the local runtime/MPS diagnosis
+- this probe is signal only; the next proof run must still be a rebooted dedicated-session repeatability block
+- this probe also exposed a runner edge case: when live stall abort attempted a process-group `SIGKILL`, the runner hit a `PermissionError`; the runner now falls back to direct process termination in that case
+
 ## System-Level Evidence
 
 - `pmset -g log` for the repeatability window shows `0` sleep/wake events since boot and no sleep transition during the run

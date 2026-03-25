@@ -19,6 +19,11 @@ from autoresearch_lib import (
 )
 from frontier_status import build_payload as build_frontier_payload
 
+REPEATABILITY_SPREAD_THRESHOLD = 0.0010
+MATERIAL_WIN_THRESHOLD = 0.0010
+MIN_CLEAN_NUM_STEPS = 300
+STALL_FAILURE_CLASSES = {"startup-hang", "early-step-stall", "late-timeout", "watchdog-timeout", "runner-abort"}
+
 
 def load_active_state(paths: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     active_run = load_json(Path(paths["active_run"]))
@@ -77,6 +82,80 @@ def live_stall_warning(
     )
 
 
+def repeatability_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_repeatability_dedicated_session.jsonl"
+
+
+def weight_decay_confirmation_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_weight_decay_confirmation.jsonl"
+
+
+def scalar_canary_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_scalar_first_canary.jsonl"
+
+
+def scalar_followup_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_scalar_followup_extension.jsonl"
+
+
+def current_repeatability_results(
+    active_run: dict[str, Any] | None,
+    active_state: dict[str, Any] | None,
+    repeatability_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if active_run and active_run.get("session_kind") == "repeatability" and active_state:
+        return list(active_state.get("completed", []))
+    return repeatability_results
+
+
+def repeatability_failure_reason(items: list[dict[str, Any]]) -> str | None:
+    for item in items:
+        status_class = str(item.get("status_class") or "")
+        if status_class in STALL_FAILURE_CLASSES:
+            return f"repeatability session recorded `{status_class}` on `{item.get('id')}`"
+        num_steps = item.get("num_steps")
+        if num_steps is not None and int(num_steps) < MIN_CLEAN_NUM_STEPS:
+            return (
+                f"repeatability session produced a truncated run on `{item.get('id')}` "
+                f"with only {int(num_steps)} steps"
+            )
+    return None
+
+
+def repeatability_branching_decision(context: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    failure = repeatability_failure_reason(items)
+    if failure:
+        return f"pause hyperparameter search and open backend/environment investigation; {failure}"
+
+    frontier_repeats = [item for item in items if str(item.get('id') or '').startswith('frontier_repeat')]
+    weight_decay_repeats = [item for item in items if str(item.get('id') or '').startswith('weight_decay_repeat_022')]
+    frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
+    weight_decay_vals = [float(item["val_bpb"]) for item in weight_decay_repeats if item.get("val_bpb") is not None]
+
+    if len(frontier_vals) >= 2:
+        spread = max(frontier_vals) - min(frontier_vals)
+        if spread > REPEATABILITY_SPREAD_THRESHOLD:
+            return (
+                "pause hyperparameter search and open backend/environment investigation; "
+                f"frontier repeatability spread is {spread:.6f}"
+            )
+
+    if len(frontier_vals) >= 2 and len(weight_decay_vals) >= 2:
+        frontier_mean = sum(frontier_vals) / len(frontier_vals)
+        weight_decay_mean = sum(weight_decay_vals) / len(weight_decay_vals)
+        if weight_decay_mean < frontier_mean - MATERIAL_WIN_THRESHOLD:
+            return (
+                "environment is stable and weight decay materially wins; "
+                f"run the confirmation block `{weight_decay_confirmation_queue_path(context)}`"
+            )
+        return (
+            "environment is stable and weight decay does not materially win; "
+            f"close weight decay and launch the scalar-first canary `{scalar_canary_queue_path(context)}`"
+        )
+
+    return "review the repeatability session; it does not yet contain enough completed results to branch safely"
+
+
 def early_stop_signal(active_state: dict[str, Any] | None, floor: float, after: int) -> dict[str, Any] | None:
     if not active_state or active_state.get("finished"):
         return None
@@ -121,27 +200,16 @@ def recommended_next_action(
         return str(signal["message"])
 
     if active_run and bool(active_run.get("finished")):
-        if repeatability_results:
-            frontier_repeats = [
-                item for item in repeatability_results if str(item.get("id") or "").startswith("frontier_repeat")
-            ]
-            weight_decay_repeats = [
-                item for item in repeatability_results if str(item.get("id") or "").startswith("weight_decay_repeat_022")
-            ]
-            frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
-            weight_decay_vals = [float(item["val_bpb"]) for item in weight_decay_repeats if item.get("val_bpb") is not None]
-            if len(frontier_vals) >= 2:
-                spread = max(frontier_vals) - min(frontier_vals)
-                if spread > 0.0005:
-                    return (
-                        "pause search and open runtime/MPS forensics; frontier repeatability spread "
-                        f"is {spread:.6f}"
-                    )
-            if weight_decay_vals and min(weight_decay_vals) <= 1.3870:
-                return "weight decay is still plausible; reopen only a tight confirmation band around 0.22"
-            if len(weight_decay_vals) >= 2 and all(value > 1.3880 for value in weight_decay_vals):
-                return "close weight decay and launch the scalar-first canary"
-            return "review repeatability block and decide whether weight decay closes or reopens"
+        if active_run.get("session_kind") == "repeatability":
+            session_results = current_repeatability_results(active_run, active_state, repeatability_results)
+            active_branch = str(active_run.get("branch") or "")
+            active_queue = str(active_run.get("queue_path") or "")
+            if "frontier-baseline-stability" in active_branch or active_queue.endswith("mar10_frontier_baseline_clean_probe.jsonl"):
+                return (
+                    "treat the single baseline probe as signal only; reboot, minimize desktop load, and launch "
+                    f"the dedicated-session repeatability block `{repeatability_queue_path(context)}`"
+                )
+            return repeatability_branching_decision(context, session_results)
         weight_decay_results = [
             item
             for item in context["gated_results"]

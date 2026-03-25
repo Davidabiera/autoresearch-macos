@@ -45,6 +45,7 @@ SUMMARY_PATTERNS = {
     "training_seconds": re.compile(r"^training_seconds:\s+([0-9.]+)$", re.MULTILINE),
     "eval_seconds": re.compile(r"^eval_seconds:\s+([0-9.]+)$", re.MULTILINE),
     "total_seconds": re.compile(r"^total_seconds:\s+([0-9.]+)$", re.MULTILINE),
+    "num_steps": re.compile(r"^num_steps:\s+([0-9]+)$", re.MULTILINE),
 }
 RESULT_FLOAT_FIELDS = (
     "val_bpb",
@@ -427,6 +428,8 @@ def parse_result_ledger(path: Path) -> list[dict[str, Any]]:
         }
         for key in RESULT_FLOAT_FIELDS:
             payload[key] = _maybe_float(data.get(key))
+        if data.get("num_steps") is not None:
+            payload["num_steps"] = int(data["num_steps"])
         if data.get("runner_timeout_seconds") is not None:
             payload["runner_timeout_seconds"] = int(data["runner_timeout_seconds"])
         rows.append(payload)
@@ -628,11 +631,15 @@ def classify_log(
         "suggested_action": suggested_action,
         "issue_scope": issue_scope,
     }
+    if metrics["num_steps"] is not None:
+        payload["num_steps"] = int(metrics["num_steps"])
     for key in ("startup_seconds", "warmup_seconds", "eval_seconds"):
         if metrics[key] is not None:
             payload[key] = metrics[key]
     if step_progress:
         payload["step_count"] = len(step_progress)
+        if payload.get("num_steps") is None:
+            payload["num_steps"] = len(step_progress)
         payload["last_step"] = step_progress[-1]["step"]
         payload["last_step_dt_ms"] = step_progress[-1]["dt_ms"]
         payload["last_remaining_seconds"] = step_progress[-1]["remaining_seconds"]
