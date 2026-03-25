@@ -14,6 +14,7 @@ from autoresearch_lib import (
     best_nonkeep_by_axis,
     collect_frontier_context,
     load_json,
+    parse_step_progress,
     parse_repeatability_results,
 )
 from frontier_status import build_payload as build_frontier_payload
@@ -40,6 +41,40 @@ def informative_results(completed: list[dict[str, Any]]) -> list[dict[str, Any]]
         for item in completed
         if item.get("status") in {"keep", "discard"} and item.get("val_bpb") is not None
     ]
+
+
+def active_log_path(active_state: dict[str, Any] | None) -> Path | None:
+    if not active_state:
+        return None
+    log_dir = active_state.get("log_dir")
+    active_experiment_id = active_state.get("active_experiment_id")
+    if not log_dir or not active_experiment_id:
+        return None
+    return Path(str(log_dir)) / f"{active_experiment_id}.log"
+
+
+def live_stall_warning(
+    active_state: dict[str, Any] | None,
+    stall_ms: int = 30_000,
+    stall_step_max: int = 20,
+    stall_count: int = 3,
+) -> str | None:
+    log_path = active_log_path(active_state)
+    if log_path is None or not log_path.exists():
+        return None
+    progress = parse_step_progress(log_path.read_text(errors="replace"))
+    stalled = [
+        item
+        for item in progress
+        if item["step"] <= stall_step_max and item["dt_ms"] >= stall_ms
+    ]
+    if len(stalled) < stall_count:
+        return None
+    worst = max(stalled, key=lambda item: item["dt_ms"])
+    return (
+        f"active log already shows {len(stalled)} early stalls >= {stall_ms}ms by step <= {stall_step_max}; "
+        f"worst step {worst['step']} at {worst['dt_ms'] / 1000.0:.1f}s"
+    )
 
 
 def early_stop_signal(active_state: dict[str, Any] | None, floor: float, after: int) -> dict[str, Any] | None:
@@ -77,8 +112,11 @@ def recommended_next_action(
     repeatability_results: list[dict[str, Any]],
     early_stop_floor: float,
     early_stop_after: int,
+    live_warning: str | None,
 ) -> str:
     signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)
+    if live_warning and active_run and not bool(active_run.get("finished")):
+        return "allow the current repeatability item to finish, but treat this session as runtime-unstable unless later repeats normalize"
     if signal:
         return str(signal["message"])
 
@@ -120,6 +158,7 @@ def build_payload(
     frontier = build_frontier_payload(target_root, branch, control_root)
     active_run, active_state = load_active_state(paths)
     repeatability_results = parse_repeatability_results(Path(paths["repeatability_results"]))
+    live_warning = live_stall_warning(active_state)
     exploration_recent = context["gated_results"][-5:]
     repeatability_recent = repeatability_results[-5:]
     best_axis = best_nonkeep_by_axis(context["gated_results"])
@@ -127,6 +166,7 @@ def build_payload(
         "frontier": frontier,
         "active_run": active_run,
         "active_state": active_state,
+        "live_stall_warning": live_warning,
         "last_exploration_results": exploration_recent,
         "last_repeatability_results": repeatability_recent,
         "best_gated_nonkeep_by_axis": best_axis,
@@ -137,6 +177,7 @@ def build_payload(
             repeatability_results,
             early_stop_floor,
             early_stop_after,
+            live_warning,
         ),
     }
 
@@ -171,6 +212,7 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
     frontier = payload["frontier"]
     active_run = payload["active_run"]
     active_state = payload["active_state"]
+    live_warning = payload["live_stall_warning"]
     lines = [
         f"# Session Status: `{frontier['branch']}`",
         "",
@@ -196,6 +238,8 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)
         if signal:
             lines.append(f"- governance: `{signal['message']}`")
+        if live_warning:
+            lines.append(f"- live stall warning: `{live_warning}`")
 
     lines.extend(["", "## Recent Exploration Results", ""])
     lines.extend(render_result_lines(payload["last_exploration_results"]))

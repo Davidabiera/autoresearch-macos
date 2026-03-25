@@ -33,6 +33,7 @@ from autoresearch_lib import (
     classify_log,
     gated_result_metadata,
     parse_gated_results,
+    parse_step_progress,
     result_ledger_path,
 )
 
@@ -83,6 +84,7 @@ SUMMARY_PATTERNS = {
     "peak_vram_mb": re.compile(r"^peak_vram_mb:\s+([0-9.]+)$", re.MULTILINE),
 }
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+STALL_POLL_SECONDS = 1.0
 
 
 class RunnerError(RuntimeError):
@@ -446,7 +448,45 @@ def commit_experiment(item: dict[str, Any], log_relpath: str) -> str:
     return current_head()
 
 
-def run_training(log_path: Path, timeout_seconds: int) -> tuple[int, str | None]:
+def detect_live_stall_abort(
+    log_path: Path,
+    stall_abort_ms: int | None,
+    stall_abort_step_max: int | None,
+    stall_abort_count: int | None,
+) -> str | None:
+    if (
+        stall_abort_ms is None
+        or stall_abort_step_max is None
+        or stall_abort_count is None
+        or stall_abort_ms <= 0
+        or stall_abort_step_max <= 0
+        or stall_abort_count <= 0
+        or not log_path.exists()
+    ):
+        return None
+    progress = parse_step_progress(log_path.read_text(errors="replace"))
+    stalled = [
+        item
+        for item in progress
+        if item["step"] <= stall_abort_step_max and item["dt_ms"] >= stall_abort_ms
+    ]
+    if len(stalled) < stall_abort_count:
+        return None
+    worst = max(stalled, key=lambda item: item["dt_ms"])
+    return (
+        f"early stall threshold exceeded ({len(stalled)} >= {stall_abort_count}; "
+        f"dt>={stall_abort_ms}ms by step<={stall_abort_step_max}; "
+        f"worst step {worst['step']} at {worst['dt_ms'] / 1000.0:.1f}s)"
+    )
+
+
+def run_training(
+    log_path: Path,
+    timeout_seconds: int,
+    stall_abort_ms: int | None,
+    stall_abort_step_max: int | None,
+    stall_abort_count: int | None,
+) -> tuple[int, str | None]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     command = resolve_train_command()
     env = os.environ.copy()
@@ -461,13 +501,29 @@ def run_training(log_path: Path, timeout_seconds: int) -> tuple[int, str | None]
             env=env,
             start_new_session=True,
         )
-        try:
-            return proc.wait(timeout=timeout_seconds), None
-        except subprocess.TimeoutExpired:
-            terminate_process_group(proc)
-            handle.write(f"\nRUNNER_TIMEOUT: exceeded {timeout_seconds} seconds\n")
-            handle.flush()
-            return 124, f"timeout after {timeout_seconds} seconds"
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            returncode = proc.poll()
+            if returncode is not None:
+                return returncode, None
+            stall_reason = detect_live_stall_abort(
+                log_path,
+                stall_abort_ms=stall_abort_ms,
+                stall_abort_step_max=stall_abort_step_max,
+                stall_abort_count=stall_abort_count,
+            )
+            if stall_reason is not None:
+                terminate_process_group(proc)
+                handle.write(f"\nRUNNER_ABORT: {stall_reason}\n")
+                handle.flush()
+                return 125, stall_reason
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                terminate_process_group(proc)
+                handle.write(f"\nRUNNER_TIMEOUT: exceeded {timeout_seconds} seconds\n")
+                handle.flush()
+                return 124, f"timeout after {timeout_seconds} seconds"
+            time.sleep(min(STALL_POLL_SECONDS, remaining))
 
 
 def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path: Path, log_dir: Path) -> dict[str, Any]:
@@ -804,7 +860,13 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             persist_state(state, state_path, report_path)
             continue
 
-        returncode, run_error = run_training(log_path, args.timeout_seconds)
+        returncode, run_error = run_training(
+            log_path,
+            args.timeout_seconds,
+            args.stall_abort_ms,
+            args.stall_abort_step_max,
+            args.stall_abort_count,
+        )
         log_text = read_log_text(log_path)
         if returncode != 0:
             append_results_row(commit, "0.000000", "0.0", "crash", item["description"])
@@ -886,11 +948,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--session-kind", choices=("exploration", "repeatability"), default="exploration")
     parser.add_argument("--early-stop-floor", type=float)
     parser.add_argument("--early-stop-after", type=int)
+    parser.add_argument("--stall-abort-ms", type=int)
+    parser.add_argument("--stall-abort-step-max", type=int)
+    parser.add_argument("--stall-abort-count", type=int)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    stall_args = (args.stall_abort_ms, args.stall_abort_step_max, args.stall_abort_count)
+    if any(value is not None for value in stall_args) and not all(value is not None for value in stall_args):
+        raise RunnerError(
+            "--stall-abort-ms, --stall-abort-step-max, and --stall-abort-count must be provided together"
+        )
     if current_branch() != args.branch:
         raise RunnerError(f"expected branch {args.branch}, found {current_branch()}")
     ensure_allowed_git_state()

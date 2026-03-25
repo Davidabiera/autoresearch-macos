@@ -52,6 +52,20 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(payload["status_class"], "early-step-stall")
         self.assertEqual(payload["last_step"], 1)
 
+    def test_runner_abort_log_classifies_as_early_step_stall(self) -> None:
+        payload = classify_log(
+            "\n".join(
+                [
+                    "step 00009 (0.0%) | loss: 7.58 | lrm: 1.00 | dt: 25754ms | tok/sec: 1272 | mfu: 0.0% | epoch: 1 | remaining: 300s",
+                    "step 00010 (0.0%) | loss: 7.44 | lrm: 1.00 | dt: 81118ms | tok/sec: 403 | mfu: 0.0% | epoch: 1 | remaining: 300s",
+                    "step 00011 (0.0%) | loss: 7.30 | lrm: 1.00 | dt: 101609ms | tok/sec: 322 | mfu: 0.0% | epoch: 1 | remaining: 198s",
+                    "RUNNER_ABORT: early stall threshold exceeded (3 >= 3; dt>=30000ms by step<=20; worst step 11 at 101.6s)",
+                ]
+            )
+        )
+        self.assertEqual(payload["status_class"], "early-step-stall")
+        self.assertIn("runner aborted", payload["reason"])
+
     def test_optimizer_micro_band_is_exhausted_after_gated_suppression(self) -> None:
         queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "optimizer-micro", 6, CONTROL_ROOT)
         self.assertEqual(queue, [])

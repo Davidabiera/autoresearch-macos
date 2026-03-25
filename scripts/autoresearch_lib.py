@@ -56,6 +56,7 @@ RESULT_FLOAT_FIELDS = (
     "total_seconds",
 )
 RUNNER_TIMEOUT_RE = re.compile(r"RUNNER_TIMEOUT: exceeded ([0-9]+) seconds")
+RUNNER_ABORT_RE = re.compile(r"RUNNER_ABORT:\s+(.+)")
 STEP_PROGRESS_RE = re.compile(
     r"step\s+(\d{5}).*?dt:\s+([0-9]+)ms.*?remaining:\s*([0-9]+)s"
 )
@@ -505,6 +506,7 @@ def classify_log(
     metrics = parse_log_metrics(text)
     step_progress = parse_step_progress(text)
     timeout_match = RUNNER_TIMEOUT_RE.search(text)
+    abort_match = RUNNER_ABORT_RE.search(text)
     informative = metrics["val_bpb"] is not None
     status_class = "unknown-crash"
     issue_scope = "unknown"
@@ -586,6 +588,18 @@ def classify_log(
                 reason = "runner timeout fired before the training loop produced any observable progress"
             issue_scope = "runner-specific" if repeated_timeout else "unknown"
             suggested_action = "queue-adjustment" if repeated_timeout else "retry"
+    elif abort_match:
+        lowered_reason = abort_match.group(1).lower()
+        if step_progress and any(item["step"] <= 20 and item["dt_ms"] >= EARLY_STALL_MS for item in step_progress):
+            status_class = "early-step-stall"
+            issue_scope = "runner-specific"
+            suggested_action = "queue-adjustment"
+            reason = f"runner aborted after early-step stall threshold: {abort_match.group(1)}"
+        else:
+            status_class = "runner-abort"
+            issue_scope = "runner-specific"
+            suggested_action = "queue-adjustment"
+            reason = f"runner aborted: {abort_match.group(1)}"
     else:
         lowered = text.lower()
         if any(marker in lowered for marker in OOM_MARKERS):
@@ -628,6 +642,8 @@ def classify_log(
         payload["memory_gb"] = round(metrics["peak_vram_mb"] / 1024.0, 1)
     if timeout_match:
         payload["runner_timeout_seconds"] = int(timeout_match.group(1))
+    if abort_match:
+        payload["runner_abort_reason"] = abort_match.group(1)
     return payload
 
 
