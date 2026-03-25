@@ -96,6 +96,11 @@ CONFIG_MARKERS = (
     "assignments must be a non-empty object",
     "must be divisible",
 )
+STALL_FAILURE_CLASSES = {"startup-hang", "early-step-stall", "late-timeout", "watchdog-timeout", "runner-abort"}
+REPEATABILITY_SPREAD_THRESHOLD = 0.0010
+MATERIAL_WIN_THRESHOLD = 0.0010
+MIN_CLEAN_NUM_STEPS = 300
+RESEARCH_PROCESS_MARKERS = ("train.py", "overnight_runner.py", "session_orchestrator.py", "uv run train.py")
 
 
 class AutoresearchError(RuntimeError):
@@ -143,19 +148,35 @@ def artifact_paths(
         "control_state": resolved_control_root / "state" / f"overnight_{resolved_tag}.json",
         "gated_results": resolved_control_root / "state" / f"gated_results_{resolved_tag}.jsonl",
         "repeatability_results": resolved_control_root / "state" / f"repeatability_{resolved_tag}.jsonl",
+        "noncanonical_signals": resolved_control_root / "state" / f"noncanonical_signals_{resolved_tag}.jsonl",
         "active_run": resolved_control_root / "state" / f"active_run_{resolved_tag}.json",
+        "orchestrator_state": resolved_control_root / "state" / f"orchestrator_{resolved_tag}.json",
         "control_report": resolved_control_root / "reports" / f"overnight_{resolved_tag}.md",
         "control_queue": resolved_control_root / "queues" / f"{resolved_tag}_overnight.jsonl",
+        "default_plan": resolved_control_root / "plans" / f"{resolved_tag}_stability_then_next_axis.json",
     }
 
 
 def result_ledger_path(control_root: Path, tag: str, session_kind: str) -> Path:
-    name = "repeatability" if session_kind == "repeatability" else "gated_results"
+    if session_kind == "repeatability":
+        name = "repeatability"
+    elif session_kind == "noncanonical":
+        name = "noncanonical_signals"
+    else:
+        name = "gated_results"
     return control_root / "state" / f"{name}_{tag}.jsonl"
 
 
 def active_run_path(control_root: Path, tag: str) -> Path:
     return control_root / "state" / f"active_run_{tag}.json"
+
+
+def orchestrator_state_path(control_root: Path, tag: str) -> Path:
+    return control_root / "state" / f"orchestrator_{tag}.json"
+
+
+def default_plan_path(control_root: Path, tag: str) -> Path:
+    return control_root / "plans" / f"{tag}_stability_then_next_axis.json"
 
 
 def run_git(target_root: Path, args: list[str]) -> str:
@@ -444,6 +465,16 @@ def parse_repeatability_results(path: Path) -> list[dict[str, Any]]:
     return parse_result_ledger(path)
 
 
+def parse_noncanonical_signals(path: Path) -> list[dict[str, Any]]:
+    return parse_result_ledger(path)
+
+
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
 def gated_result_is_final(item: dict[str, Any]) -> bool:
     if item.get("suppress_planner") is not None:
         return bool(item["suppress_planner"])
@@ -500,6 +531,89 @@ def parse_step_progress(text: str) -> list[dict[str, int]]:
             }
         )
     return progress
+
+
+def process_alive(pid: int | None) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def process_cwd(pid: int) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+            text=True,
+            capture_output=True,
+        )
+    except PermissionError:
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        if line.startswith("n"):
+            return line[1:]
+    return None
+
+
+def live_research_processes() -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid,ppid,command"],
+            text=True,
+            capture_output=True,
+        )
+    except PermissionError:
+        return []
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip()
+        if "operation not permitted" in detail.lower():
+            return []
+        raise AutoresearchError(f"ps failed: {detail}")
+    items: list[dict[str, Any]] = []
+    for raw_line in proc.stdout.splitlines()[1:]:
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid = int(parts[0])
+        ppid = int(parts[1])
+        command = parts[2]
+        if not any(marker in command for marker in RESEARCH_PROCESS_MARKERS):
+            continue
+        if "rg " in command and "train.py" in command:
+            continue
+        items.append(
+            {
+                "pid": pid,
+                "ppid": ppid,
+                "command": command,
+                "cwd": process_cwd(pid),
+            }
+        )
+    return items
+
+
+def foreign_research_processes(execution_root: Path, allowed_pids: set[int] | None = None) -> list[dict[str, Any]]:
+    allowed = allowed_pids or set()
+    resolved_root = execution_root.resolve()
+    blockers: list[dict[str, Any]] = []
+    for item in live_research_processes():
+        if int(item["pid"]) in allowed:
+            continue
+        cwd = item.get("cwd")
+        if cwd and Path(cwd).resolve() == resolved_root:
+            continue
+        blockers.append(item)
+    return blockers
 
 
 def classify_log(
@@ -729,6 +843,7 @@ def collect_frontier_context(
     handoff_frontier = parse_handoff_frontier(paths["handoff"])
     gated_results = parse_gated_results(paths["gated_results"])
     repeatability_results = parse_repeatability_results(paths["repeatability_results"])
+    noncanonical_signals = parse_noncanonical_signals(paths["noncanonical_signals"])
     gated_ids, gated_descriptions = gated_result_metadata(gated_results)
     best_train_constants = read_commit_train_constants(target_root, best.commit)
     current_train_constants = parse_python_constants(target_root / "train.py")
@@ -753,6 +868,7 @@ def collect_frontier_context(
         "handoff_frontier": handoff_frontier,
         "gated_results": gated_results,
         "repeatability_results": repeatability_results,
+        "noncanonical_signals": noncanonical_signals,
         "gated_suppressed_ids": gated_ids,
         "gated_suppressed_descriptions": gated_descriptions,
         "best_train_constants": best_train_constants,
@@ -978,3 +1094,61 @@ def count_non_informative(control_state: dict[str, Any] | None) -> dict[str, int
         "timeout": counts.get("timeout", 0),
         "crash": counts.get("crash", 0),
     }
+
+
+def repeatability_failure_reason(items: list[dict[str, Any]]) -> str | None:
+    for item in items:
+        status_class = str(item.get("status_class") or "")
+        if status_class in STALL_FAILURE_CLASSES:
+            return f"repeatability session recorded `{status_class}` on `{item.get('id')}`"
+        num_steps = item.get("num_steps")
+        if num_steps is not None and int(num_steps) < MIN_CLEAN_NUM_STEPS:
+            return (
+                f"repeatability session produced a truncated run on `{item.get('id')}` "
+                f"with only {int(num_steps)} steps"
+            )
+    return None
+
+
+def evaluate_repeatability_gate(items: list[dict[str, Any]]) -> dict[str, Any]:
+    failure = repeatability_failure_reason(items)
+    frontier_repeats = [item for item in items if str(item.get("id") or "").startswith("frontier_repeat")]
+    weight_decay_repeats = [item for item in items if str(item.get("id") or "").startswith("weight_decay_repeat_022")]
+    frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
+    weight_decay_vals = [float(item["val_bpb"]) for item in weight_decay_repeats if item.get("val_bpb") is not None]
+    frontier_mean = sum(frontier_vals) / len(frontier_vals) if frontier_vals else None
+    weight_decay_mean = sum(weight_decay_vals) / len(weight_decay_vals) if weight_decay_vals else None
+    frontier_spread = max(frontier_vals) - min(frontier_vals) if len(frontier_vals) >= 2 else None
+    weight_decay_spread = max(weight_decay_vals) - min(weight_decay_vals) if len(weight_decay_vals) >= 2 else None
+
+    result: dict[str, Any] = {
+        "passed": False,
+        "failure_reason": failure,
+        "frontier_count": len(frontier_vals),
+        "weight_decay_count": len(weight_decay_vals),
+        "frontier_mean": frontier_mean,
+        "weight_decay_mean": weight_decay_mean,
+        "frontier_spread": frontier_spread,
+        "weight_decay_spread": weight_decay_spread,
+        "material_winner": None,
+        "next_stage": None,
+    }
+    if failure:
+        result["reason"] = failure
+        return result
+    if frontier_spread is not None and frontier_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        result["reason"] = f"frontier repeatability spread is {frontier_spread:.6f}"
+        return result
+    if len(frontier_vals) < 2 or len(weight_decay_vals) < 2:
+        result["reason"] = "repeatability session does not yet have enough completed results"
+        return result
+
+    result["passed"] = True
+    if weight_decay_mean is not None and frontier_mean is not None and weight_decay_mean < frontier_mean - MATERIAL_WIN_THRESHOLD:
+        result["material_winner"] = "weight_decay"
+        result["next_stage"] = "weight_decay_confirmation"
+        result["reason"] = "environment is stable and weight decay materially wins"
+    else:
+        result["next_stage"] = "scalar_first_canary"
+        result["reason"] = "environment is stable and weight decay does not materially win"
+    return result

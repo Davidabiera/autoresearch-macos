@@ -12,11 +12,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 WORKSPACE_ROOT = Path("/Users/davidabiera/Projects/team/autoresearch-macos")
 CONTROL_ROOT = WORKSPACE_ROOT / "worktrees" / "control" / "control"
 
-from autoresearch_lib import classify_log  # noqa: E402
+from autoresearch_lib import classify_log, evaluate_repeatability_gate  # noqa: E402
 from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
+from session_orchestrator import plan_preflight_blockers  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
     repeatability_branching_decision,
@@ -147,6 +148,30 @@ class AutoresearchToolTests(unittest.TestCase):
         ]
         action = repeatability_branching_decision(context, items)
         self.assertIn("backend/environment investigation", action)
+
+    def test_repeatability_gate_selects_scalar_when_weight_decay_is_not_material(self) -> None:
+        items = [
+            {"id": "frontier_repeat_a", "val_bpb": 1.3900, "status_class": "post-train-overrun", "num_steps": 340},
+            {"id": "frontier_repeat_b", "val_bpb": 1.3905, "status_class": "post-train-overrun", "num_steps": 339},
+            {"id": "weight_decay_repeat_022_a", "val_bpb": 1.3896, "status_class": "post-train-overrun", "num_steps": 341},
+            {"id": "weight_decay_repeat_022_b", "val_bpb": 1.3897, "status_class": "post-train-overrun", "num_steps": 340},
+        ]
+        evaluation = evaluate_repeatability_gate(items)
+        self.assertTrue(evaluation["passed"])
+        self.assertEqual(evaluation["next_stage"], "scalar_first_canary")
+
+    def test_orchestrator_preflight_blocks_missing_execution_root(self) -> None:
+        plan = {
+            "tag": "mar10",
+            "execution_root": "/tmp/does-not-exist-mar10",
+            "control_root": str(CONTROL_ROOT),
+            "train_cmd": "/bin/echo train.py",
+            "stages": [],
+        }
+        blockers, warnings = plan_preflight_blockers(plan, resume=False)
+        self.assertTrue(blockers)
+        self.assertEqual(warnings, [])
+        self.assertIn("execution root does not exist", blockers[0])
 
 
 if __name__ == "__main__":

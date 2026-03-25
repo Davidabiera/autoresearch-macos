@@ -13,16 +13,16 @@ from autoresearch_lib import (
     axis_from_item_id,
     best_nonkeep_by_axis,
     collect_frontier_context,
+    current_branch,
+    evaluate_repeatability_gate,
+    foreign_research_processes,
     load_json,
-    parse_step_progress,
+    parse_noncanonical_signals,
     parse_repeatability_results,
+    parse_step_progress,
+    process_alive,
 )
 from frontier_status import build_payload as build_frontier_payload
-
-REPEATABILITY_SPREAD_THRESHOLD = 0.0010
-MATERIAL_WIN_THRESHOLD = 0.0010
-MIN_CLEAN_NUM_STEPS = 300
-STALL_FAILURE_CLASSES = {"startup-hang", "early-step-stall", "late-timeout", "watchdog-timeout", "runner-abort"}
 
 
 def load_active_state(paths: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -38,6 +38,32 @@ def load_active_state(paths: dict[str, Any]) -> tuple[dict[str, Any] | None, dic
         active_run["active_experiment_id"] = active_state.get("active_experiment_id", active_run.get("active_experiment_id"))
         active_run["stopped_reason"] = active_state.get("stopped_reason", active_run.get("stopped_reason"))
     return active_run, active_state
+
+
+def active_run_interrupted(active_run: dict[str, Any] | None) -> bool:
+    if not active_run or bool(active_run.get("finished")):
+        return False
+    pid = active_run.get("pid")
+    if pid is None:
+        return True
+    return not process_alive(int(pid))
+
+
+def load_orchestrator_state(paths: dict[str, Any]) -> dict[str, Any] | None:
+    return load_json(Path(paths["orchestrator_state"]))
+
+
+def orchestrator_interrupted(orchestrator_state: dict[str, Any] | None) -> bool:
+    if not orchestrator_state or bool(orchestrator_state.get("finished")):
+        return False
+    pid = orchestrator_state.get("pid")
+    if pid is None:
+        return True
+    return not process_alive(int(pid))
+
+
+def load_default_plan(paths: dict[str, Any]) -> dict[str, Any] | None:
+    return load_json(Path(paths["default_plan"]))
 
 
 def informative_results(completed: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -94,10 +120,6 @@ def scalar_canary_queue_path(context: dict[str, Any]) -> Path:
     return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_scalar_first_canary.jsonl"
 
 
-def scalar_followup_queue_path(context: dict[str, Any]) -> Path:
-    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_scalar_followup_extension.jsonl"
-
-
 def current_repeatability_results(
     active_run: dict[str, Any] | None,
     active_state: dict[str, Any] | None,
@@ -108,52 +130,19 @@ def current_repeatability_results(
     return repeatability_results
 
 
-def repeatability_failure_reason(items: list[dict[str, Any]]) -> str | None:
-    for item in items:
-        status_class = str(item.get("status_class") or "")
-        if status_class in STALL_FAILURE_CLASSES:
-            return f"repeatability session recorded `{status_class}` on `{item.get('id')}`"
-        num_steps = item.get("num_steps")
-        if num_steps is not None and int(num_steps) < MIN_CLEAN_NUM_STEPS:
-            return (
-                f"repeatability session produced a truncated run on `{item.get('id')}` "
-                f"with only {int(num_steps)} steps"
-            )
-    return None
-
-
 def repeatability_branching_decision(context: dict[str, Any], items: list[dict[str, Any]]) -> str:
-    failure = repeatability_failure_reason(items)
-    if failure:
-        return f"pause hyperparameter search and open backend/environment investigation; {failure}"
-
-    frontier_repeats = [item for item in items if str(item.get('id') or '').startswith('frontier_repeat')]
-    weight_decay_repeats = [item for item in items if str(item.get('id') or '').startswith('weight_decay_repeat_022')]
-    frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
-    weight_decay_vals = [float(item["val_bpb"]) for item in weight_decay_repeats if item.get("val_bpb") is not None]
-
-    if len(frontier_vals) >= 2:
-        spread = max(frontier_vals) - min(frontier_vals)
-        if spread > REPEATABILITY_SPREAD_THRESHOLD:
-            return (
-                "pause hyperparameter search and open backend/environment investigation; "
-                f"frontier repeatability spread is {spread:.6f}"
-            )
-
-    if len(frontier_vals) >= 2 and len(weight_decay_vals) >= 2:
-        frontier_mean = sum(frontier_vals) / len(frontier_vals)
-        weight_decay_mean = sum(weight_decay_vals) / len(weight_decay_vals)
-        if weight_decay_mean < frontier_mean - MATERIAL_WIN_THRESHOLD:
-            return (
-                "environment is stable and weight decay materially wins; "
-                f"run the confirmation block `{weight_decay_confirmation_queue_path(context)}`"
-            )
+    evaluation = evaluate_repeatability_gate(items)
+    if not evaluation["passed"]:
+        return f"pause hyperparameter search and open backend/environment investigation; {evaluation['reason']}"
+    if evaluation["next_stage"] == "weight_decay_confirmation":
         return (
-            "environment is stable and weight decay does not materially win; "
-            f"close weight decay and launch the scalar-first canary `{scalar_canary_queue_path(context)}`"
+            "environment is stable and weight decay materially wins; "
+            f"run the confirmation block `{weight_decay_confirmation_queue_path(context)}`"
         )
-
-    return "review the repeatability session; it does not yet contain enough completed results to branch safely"
+    return (
+        "environment is stable and weight decay does not materially win; "
+        f"close weight decay and launch the scalar-first canary `{scalar_canary_queue_path(context)}`"
+    )
 
 
 def early_stop_signal(active_state: dict[str, Any] | None, floor: float, after: int) -> dict[str, Any] | None:
@@ -184,6 +173,40 @@ def early_stop_signal(active_state: dict[str, Any] | None, floor: float, after: 
     }
 
 
+def preflight_blockers(
+    plan: dict[str, Any] | None,
+    active_run: dict[str, Any] | None,
+    active_run_is_interrupted: bool,
+    orchestrator_state: dict[str, Any] | None,
+    orchestrator_is_interrupted: bool,
+) -> list[str]:
+    if not plan:
+        return []
+    blockers: list[str] = []
+    execution_root = Path(str(plan["execution_root"])).resolve()
+    if not execution_root.exists():
+        blockers.append(f"execution root does not exist: `{execution_root}`")
+        return blockers
+    branch = current_branch(execution_root)
+    if not branch.startswith("codex/execution-baseline"):
+        blockers.append(f"execution root is on `{branch}`, not an execution-baseline branch")
+    if active_run and not bool(active_run.get("finished")) and not active_run_is_interrupted:
+        blockers.append(f"unfinished stage run is active for control tag `{plan['tag']}`")
+    if orchestrator_state and not bool(orchestrator_state.get("finished")) and not orchestrator_is_interrupted:
+        blockers.append(f"unfinished orchestrator session is active for control tag `{plan['tag']}`")
+    allowed_pids: set[int] = set()
+    if active_run and not active_run_is_interrupted and active_run.get("pid") is not None:
+        allowed_pids.add(int(active_run["pid"]))
+    if orchestrator_state and not orchestrator_is_interrupted and orchestrator_state.get("pid") is not None:
+        allowed_pids.add(int(orchestrator_state["pid"]))
+    foreign = foreign_research_processes(execution_root, allowed_pids=allowed_pids)
+    for item in foreign[:3]:
+        blockers.append(
+            f"foreign research process pid {item['pid']} is alive outside execution root (cwd `{item.get('cwd') or 'unknown'}`)"
+        )
+    return blockers
+
+
 def recommended_next_action(
     context: dict[str, Any],
     active_run: dict[str, Any] | None,
@@ -192,7 +215,20 @@ def recommended_next_action(
     early_stop_floor: float,
     early_stop_after: int,
     live_warning: str | None,
+    orchestrator_state: dict[str, Any] | None,
+    active_run_is_interrupted: bool,
+    orchestrator_is_interrupted: bool,
+    blockers: list[str],
 ) -> str:
+    if blockers:
+        return "do not launch autonomous stages until blockers are cleared: " + "; ".join(blockers)
+    if orchestrator_is_interrupted:
+        return "previous orchestrator session is interrupted; inspect its state and relaunch through the orchestrator"
+    if active_run_is_interrupted:
+        return "previous stage runner is interrupted; inspect its state and relaunch through the orchestrator"
+    if orchestrator_state and orchestrator_state.get("next_action"):
+        return str(orchestrator_state["next_action"])
+
     signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)
     if live_warning and active_run and not bool(active_run.get("finished")):
         return "allow the current repeatability item to finish, but treat this session as runtime-unstable unless later repeats normalize"
@@ -206,7 +242,7 @@ def recommended_next_action(
             active_queue = str(active_run.get("queue_path") or "")
             if "frontier-baseline-stability" in active_branch or active_queue.endswith("mar10_frontier_baseline_clean_probe.jsonl"):
                 return (
-                    "treat the single baseline probe as signal only; reboot, minimize desktop load, and launch "
+                    "treat the single baseline probe as signal only; launch "
                     f"the dedicated-session repeatability block `{repeatability_queue_path(context)}`"
                 )
             return repeatability_branching_decision(context, session_results)
@@ -244,18 +280,31 @@ def build_payload(
     paths = artifact_paths(target_root, branch, control_root=control_root, tag=context["tag"])
     frontier = build_frontier_payload(target_root, branch, control_root)
     active_run, active_state = load_active_state(paths)
+    active_run_is_interrupted = active_run_interrupted(active_run)
+    orchestrator_state = load_orchestrator_state(paths)
+    orchestrator_is_interrupted = orchestrator_interrupted(orchestrator_state)
+    default_plan = load_default_plan(paths)
+    blockers = preflight_blockers(default_plan, active_run, active_run_is_interrupted, orchestrator_state, orchestrator_is_interrupted)
     repeatability_results = parse_repeatability_results(Path(paths["repeatability_results"]))
+    noncanonical_signals = parse_noncanonical_signals(Path(paths["noncanonical_signals"]))
     live_warning = live_stall_warning(active_state)
     exploration_recent = context["gated_results"][-5:]
     repeatability_recent = repeatability_results[-5:]
+    noncanonical_recent = noncanonical_signals[-5:]
     best_axis = best_nonkeep_by_axis(context["gated_results"])
     return {
         "frontier": frontier,
         "active_run": active_run,
         "active_state": active_state,
+        "active_run_interrupted": active_run_is_interrupted,
+        "orchestrator_state": orchestrator_state,
+        "orchestrator_interrupted": orchestrator_is_interrupted,
+        "default_plan": default_plan,
+        "preflight_blockers": blockers,
         "live_stall_warning": live_warning,
         "last_exploration_results": exploration_recent,
         "last_repeatability_results": repeatability_recent,
+        "last_noncanonical_signals": noncanonical_recent,
         "best_gated_nonkeep_by_axis": best_axis,
         "recommended_next_action": recommended_next_action(
             context,
@@ -265,6 +314,10 @@ def build_payload(
             early_stop_floor,
             early_stop_after,
             live_warning,
+            orchestrator_state,
+            active_run_is_interrupted,
+            orchestrator_is_interrupted,
+            blockers,
         ),
     }
 
@@ -319,6 +372,10 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         lines.append(f"- branch: `{active_run.get('branch')}`")
         lines.append(f"- state: `{active_run.get('state_path')}`")
         lines.append(f"- finished: `{str(bool(active_run.get('finished'))).lower()}`")
+        if active_run.get("pid") is not None:
+            lines.append(f"- pid: `{active_run.get('pid')}`")
+        if payload["active_run_interrupted"]:
+            lines.append("- interrupted: `true`")
         if active_state:
             lines.append(f"- attempted: `{active_state.get('attempted', 0)}`")
             lines.append(f"- active experiment: `{active_state.get('active_experiment_id')}`")
@@ -328,10 +385,37 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         if live_warning:
             lines.append(f"- live stall warning: `{live_warning}`")
 
+    lines.extend(["", "## Orchestrator", ""])
+    orchestrator_state = payload["orchestrator_state"]
+    if not orchestrator_state:
+        lines.append("- none")
+    else:
+        lines.append(f"- plan id: `{orchestrator_state.get('plan_id')}`")
+        lines.append(f"- finished: `{str(bool(orchestrator_state.get('finished'))).lower()}`")
+        lines.append(f"- current stage: `{orchestrator_state.get('current_stage_id')}`")
+        lines.append(f"- next action: `{orchestrator_state.get('next_action')}`")
+        if payload["orchestrator_interrupted"]:
+            lines.append("- interrupted: `true`")
+        completed_stages = orchestrator_state.get("completed_stages") or []
+        if completed_stages:
+            last_stage = completed_stages[-1]
+            lines.append(
+                f"- last stage: `{last_stage.get('stage_id')}` passed=`{str(bool(last_stage.get('passed'))).lower()}` reason=`{last_stage.get('reason')}`"
+            )
+
+    lines.extend(["", "## Preflight Blockers", ""])
+    if payload["preflight_blockers"]:
+        for blocker in payload["preflight_blockers"]:
+            lines.append(f"- {blocker}")
+    else:
+        lines.append("- none")
+
     lines.extend(["", "## Recent Exploration Results", ""])
     lines.extend(render_result_lines(payload["last_exploration_results"]))
     lines.extend(["", "## Recent Repeatability Results", ""])
     lines.extend(render_result_lines(payload["last_repeatability_results"]))
+    lines.extend(["", "## Recent Noncanonical Signals", ""])
+    lines.extend(render_result_lines(payload["last_noncanonical_signals"]))
     lines.extend(["", "## Best Gated Non-Keep By Axis", ""])
     lines.extend(render_axis_lines(payload["best_gated_nonkeep_by_axis"]))
     lines.extend(["", "## Next Action", ""])

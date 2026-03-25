@@ -26,7 +26,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from autoresearch_lib import (
     active_run_path,
@@ -296,10 +296,17 @@ def active_pointer_payload(state: dict[str, Any], state_path: Path, report_path:
         "control_tag": state["control_tag"],
         "branch": state["branch"],
         "session_kind": state["session_kind"],
+        "pid": state.get("pid"),
+        "execution_root": state.get("execution_root"),
+        "control_root": state.get("control_root"),
+        "plan_path": state.get("plan_path"),
+        "stage_id": state.get("stage_id"),
+        "launcher": state.get("launcher"),
         "state_path": str(state_path),
         "report_path": str(report_path),
         "queue_path": state["queue_path"],
         "started_at": state["started_at"],
+        "last_heartbeat_at": state.get("last_heartbeat_at"),
         "active_experiment_id": state.get("active_experiment_id"),
         "finished": bool(state.get("finished")),
         "stopped_reason": state.get("stopped_reason"),
@@ -310,6 +317,8 @@ def active_pointer_payload(state: dict[str, Any], state_path: Path, report_path:
 
 
 def persist_state(state: dict[str, Any], state_path: Path, report_path: Path) -> None:
+    state["pid"] = os.getpid()
+    state["last_heartbeat_at"] = time.time()
     write_json(state_path, state)
     write_json(active_pointer_path(str(state["tag"])), active_pointer_payload(state, state_path, report_path))
 
@@ -501,6 +510,7 @@ def run_training(
     stall_abort_ms: int | None,
     stall_abort_step_max: int | None,
     stall_abort_count: int | None,
+    heartbeat: Callable[[], None] | None = None,
 ) -> tuple[int, str | None]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     command = resolve_train_command()
@@ -521,6 +531,8 @@ def run_training(
             returncode = proc.poll()
             if returncode is not None:
                 return returncode, None
+            if heartbeat is not None:
+                heartbeat()
             stall_reason = detect_live_stall_abort(
                 log_path,
                 stall_abort_ms=stall_abort_ms,
@@ -565,11 +577,18 @@ def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path
         "tag": tag,
         "control_tag": control_tag(tag),
         "session_kind": args.session_kind,
+        "pid": os.getpid(),
+        "execution_root": str(ROOT),
+        "control_root": str(CONTROL_ROOT),
+        "plan_path": os.environ.get("AUTORESEARCH_PLAN_PATH"),
+        "stage_id": os.environ.get("AUTORESEARCH_STAGE_ID"),
+        "launcher": os.environ.get("AUTORESEARCH_LAUNCHER"),
         "queue_path": str(queue_path),
         "state_path": str(state_path),
         "report_path": str(report_path),
         "log_dir": str(log_dir),
         "started_at": time.time(),
+        "last_heartbeat_at": time.time(),
         "ended_at": None,
         "start_best_commit": args.best_commit,
         "start_best_val": args.best_val,
@@ -597,6 +616,13 @@ def load_or_init_state(args: argparse.Namespace) -> tuple[dict[str, Any], Path, 
         state = read_json(state_path)
         state.setdefault("control_tag", control_tag(tag))
         state.setdefault("session_kind", args.session_kind)
+        state.setdefault("pid", os.getpid())
+        state.setdefault("execution_root", str(ROOT))
+        state.setdefault("control_root", str(CONTROL_ROOT))
+        state.setdefault("plan_path", os.environ.get("AUTORESEARCH_PLAN_PATH"))
+        state.setdefault("stage_id", os.environ.get("AUTORESEARCH_STAGE_ID"))
+        state.setdefault("launcher", os.environ.get("AUTORESEARCH_LAUNCHER"))
+        state.setdefault("last_heartbeat_at", time.time())
         state.setdefault("ended_at", None)
         return state, state_path, report_path, log_dir
     state = init_state(args, tag, state_path, report_path, log_dir)
@@ -885,6 +911,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             args.stall_abort_ms,
             args.stall_abort_step_max,
             args.stall_abort_count,
+            heartbeat=lambda: persist_state(state, state_path, report_path),
         )
         log_text = read_log_text(log_path)
         if returncode != 0:
