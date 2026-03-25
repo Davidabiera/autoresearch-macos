@@ -122,6 +122,25 @@ def recommended_next_action(
 
     if active_run and bool(active_run.get("finished")):
         if repeatability_results:
+            frontier_repeats = [
+                item for item in repeatability_results if str(item.get("id") or "").startswith("frontier_repeat")
+            ]
+            weight_decay_repeats = [
+                item for item in repeatability_results if str(item.get("id") or "").startswith("weight_decay_repeat_022")
+            ]
+            frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
+            weight_decay_vals = [float(item["val_bpb"]) for item in weight_decay_repeats if item.get("val_bpb") is not None]
+            if len(frontier_vals) >= 2:
+                spread = max(frontier_vals) - min(frontier_vals)
+                if spread > 0.0005:
+                    return (
+                        "pause search and open runtime/MPS forensics; frontier repeatability spread "
+                        f"is {spread:.6f}"
+                    )
+            if weight_decay_vals and min(weight_decay_vals) <= 1.3870:
+                return "weight decay is still plausible; reopen only a tight confirmation band around 0.22"
+            if len(weight_decay_vals) >= 2 and all(value > 1.3880 for value in weight_decay_vals):
+                return "close weight decay and launch the scalar-first canary"
             return "review repeatability block and decide whether weight decay closes or reopens"
         weight_decay_results = [
             item

@@ -94,6 +94,7 @@ class AutoresearchToolTests(unittest.TestCase):
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
         self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
         self.assertTrue(payload["recommended_next_action"])
+        self.assertIn("runtime/MPS forensics", payload["recommended_next_action"])
 
 
 if __name__ == "__main__":
