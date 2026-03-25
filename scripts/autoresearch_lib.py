@@ -692,10 +692,13 @@ def collect_frontier_context(
     tag: str | None = None,
 ) -> dict[str, Any]:
     paths = artifact_paths(target_root.resolve(), branch, control_root=control_root, tag=tag)
-    results_path, rows = resolve_results_source(Path(paths["results"]), Path(paths["results_snapshot"]))
+    repo_branch = current_branch(target_root)
+    if repo_branch != branch and Path(paths["results_snapshot"]).exists():
+        results_path, rows = resolve_results_source(Path(paths["results_snapshot"]), Path(paths["results"]))
+    else:
+        results_path, rows = resolve_results_source(Path(paths["results"]), Path(paths["results_snapshot"]))
     best = best_result(rows)
     best_commit_short = maybe_short_commit(target_root, best.commit) or best.commit
-    repo_branch = current_branch(target_root)
     head_commit = current_head(target_root)
     head_row = find_result_by_commit(rows, head_commit)
     control_state = load_json(paths["control_state"])
