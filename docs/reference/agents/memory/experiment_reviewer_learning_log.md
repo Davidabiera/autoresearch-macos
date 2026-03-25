@@ -98,3 +98,29 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: none
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260325-163646_autoresearch-mar24-night_5fd40db_3a0acbe]
+- Parent workflow: overnight experiment loop after bookkeeping cleanup and schedule-axis switch
+- Trigger: completed run with valid summary metrics after raising the final learning-rate floor from 0.05 to 0.075
+- Inputs used: program.md, README.md, current train.py, last commit 3a0acbe, run.log, results.tsv, prepare.py
+- Output delivered: discard verdict with one strict TSV row and one bounded next-step recommendation
+- What worked: the run completed cleanly and isolated the schedule-floor effect without any throughput or stability confound
+- Friction: memory evidence remains weak because peak_vram_mb is still non-informative on the current MPS path
+- Uncertainty: low uncertainty on the discard verdict; the higher late-run floor worsened val_bpb from 1.382862 to 1.385292
+- Reusable pattern: when a higher late-run LR floor regresses versus the frontier in a fixed-budget regime, prefer exploring earlier decay rather than preserving more LR late
+- Proposed dossier change: none
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260325-165212_autoresearch-mar24-night_0da0217_88c8ecb]
+- Parent workflow: overnight experiment loop continuing along the schedule axis after a failed higher final-lr-floor probe
+- Trigger: completed run with valid summary metrics after extending WARMDOWN_RATIO from 0.5 to 0.55
+- Inputs used: program.md, README.md, current train.py, last commit 88c8ecb, run.log, results.tsv, prepare.py
+- Output delivered: discard verdict with one strict TSV row and one bounded next-step recommendation
+- What worked: the run completed cleanly and decisively ruled out earlier decay on the current frontier configuration
+- Friction: memory evidence remains weak because peak_vram_mb remains non-informative on the current MPS path
+- Uncertainty: low uncertainty on the discard verdict; the regression from 1.382862 to 1.392274 is large enough to treat as a clear miss
+- Reusable pattern: when both higher late-run floor and earlier decay regress, the current schedule shape is likely already near a local optimum and the next probe should switch away from this schedule family
+- Proposed dossier change: none
+- Proposed AGENTS or skill change: none
+- Confidence: high

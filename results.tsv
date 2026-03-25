@@ -5,3 +5,5 @@ e9f7896	0.000000	0.0	crash	raise weight decay to 0.2195
 21af6c2	1.384808	0.0	keep	raise unembedding lr to 0.005
 76defde	1.382862	0.0	keep	raise unembedding lr to 0.00525
 fb177dc	1.384670	0.0	discard	raise unembedding lr to 0.0055
+3a0acbe	1.385292	0.0	discard	raise final lr floor to 0.075
+88c8ecb	1.392274	0.0	discard	extend warmdown ratio to 0.55
