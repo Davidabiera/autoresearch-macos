@@ -26,12 +26,16 @@ Parent owns:
 - strict TSV row preparation or explicit blocked reason
 - learning-entry generation for parent persistence
 
+Operational invariant:
+- Because `results.tsv` and the learning log are persisted in repo files, discard/crash rollback must revert only experiment-owned code surfaces, not hard-reset the whole worktree after persistence.
+
 ## Defaults Chosen
 - Workflow style: prompt-driven execution with an explicit documented state machine
 - Output style: human-readable decision packet with semi-structured fenced blocks; only the TSV row is machine-appendable
 - Execution ownership: parent keeps all run execution and loop-state control
 - `results.tsv`: initialize on setup if missing; treat as append-only run memory
 - Run identity: assign `run_id` as `YYYYMMDD-HHMMSS_<branch>_<base_commit>`
+- Per-run archive path: `logs/overnight/<branch>/<run_id>.log`
 - Base commit: capture the current frontier commit before each new idea
 - Crash-rework budget: allow at most 2 bounded rework attempts after the initial failed run for the same idea
 - Blocked state: only for genuine workflow blockers, not ordinary ambiguity
@@ -105,6 +109,8 @@ Transition:
 - Inspect:
   - `grep "^val_bpb:\|^peak_vram_mb:" run.log`
   - `tail -n 50 run.log` when grep is empty or failure is suspected
+- Archive:
+  - copy the completed `run.log` to `logs/overnight/<branch>/<run_id>.log` before the next run starts
 - Preserve:
   - branch name
   - `base_commit`
@@ -140,7 +146,7 @@ Transition:
 #### `discard`
 - Append the reviewer-provided TSV row to `results.tsv`.
 - Persist the reviewer-provided learning entry to `docs/reference/agents/memory/experiment_reviewer_learning_log.md`.
-- Reset the repo back to `base_commit`.
+- Restore `train.py` back to its `base_commit` version while preserving `results.tsv` and the learning log.
 - Keep `frontier_commit = base_commit`.
 - Move to `Select Idea`.
 
@@ -155,7 +161,7 @@ Transition:
 - Otherwise:
   - use the most recent reviewer-provided crash TSV row if present
   - append that crash row to `results.tsv`
-  - reset the repo back to `base_commit`
+  - restore `train.py` back to its `base_commit` version while preserving `results.tsv` and the learning log
   - keep `frontier_commit = base_commit`
   - move to `Select Idea`
 
@@ -226,6 +232,8 @@ Important:
 - The parent persists only reviewer-generated TSV rows, not ad hoc rows written from memory.
 - The parent persists every `LEARNING_LOG_ENTRY` it receives to `docs/reference/agents/memory/experiment_reviewer_learning_log.md`.
 - The parent must preserve the one-line `experiment_description` across crash-rework attempts for the same idea unless the idea is intentionally abandoned and replaced.
+- After persisting a reviewer output, discard/crash rollback should restore experiment-owned code surfaces only. In the current repo that means `train.py`.
+- The parent should preserve one archived raw log per completed run at `logs/overnight/<branch>/<run_id>.log`.
 
 ## Operational Notes
 - Low reviewer confidence does not block the loop by itself if the verdict is actionable.

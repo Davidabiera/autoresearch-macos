@@ -19,6 +19,7 @@ Own all repo mutations and loop state:
 - commit before execution
 - run `uv run train.py > run.log 2>&1`
 - enforce the 10-minute timeout rule
+- archive each completed `run.log` to `logs/overnight/<branch>/<run_id>.log` before the next run starts
 - invoke experiment_reviewer after every completed run using the canonical contract in the workflow doc
 - apply keep, discard, and crash-rework exactly as defined there
 - persist reviewer-provided TSV rows to results.tsv
