@@ -1,0 +1,2 @@
+{"assignments": {"SCALAR_LR": "0.475"}, "description": "lower scalar lr to 0.475", "id": "scalar_lr_0475"}
+{"assignments": {"SCALAR_LR": "0.46875"}, "description": "lower scalar lr to 0.46875", "id": "scalar_lr_046875"}

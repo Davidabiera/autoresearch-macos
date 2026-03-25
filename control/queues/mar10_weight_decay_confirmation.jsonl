@@ -1,0 +1,3 @@
+{"assignments": {}, "description": "repeat canonical frontier baseline confirmation c", "id": "frontier_repeat_confirmation_c"}
+{"assignments": {"WEIGHT_DECAY": "0.22"}, "description": "repeat weight decay 0.22 confirmation c", "id": "weight_decay_repeat_022_confirmation_c"}
+{"assignments": {"WEIGHT_DECAY": "0.22"}, "description": "repeat weight decay 0.22 confirmation d", "id": "weight_decay_repeat_022_confirmation_d"}

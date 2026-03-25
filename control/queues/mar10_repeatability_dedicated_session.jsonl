@@ -1,0 +1,4 @@
+{"assignments": {}, "description": "repeat canonical frontier baseline dedicated session a", "id": "frontier_repeat_dedicated_a"}
+{"assignments": {"WEIGHT_DECAY": "0.22"}, "description": "repeat weight decay 0.22 dedicated session a", "id": "weight_decay_repeat_022_dedicated_a"}
+{"assignments": {}, "description": "repeat canonical frontier baseline dedicated session b", "id": "frontier_repeat_dedicated_b"}
+{"assignments": {"WEIGHT_DECAY": "0.22"}, "description": "repeat weight decay 0.22 dedicated session b", "id": "weight_decay_repeat_022_dedicated_b"}
