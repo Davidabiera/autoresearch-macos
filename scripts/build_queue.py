@@ -43,6 +43,16 @@ FALLBACK_TEMPLATES: dict[str, list[QueueItem]] = {
         make_queue_item("SCALAR_LR", "0.4875", "lower scalar lr to 0.4875"),
         make_queue_item("SCALAR_LR", "0.4625", "lower scalar lr to 0.4625"),
     ],
+    "scalar-first": [
+        make_queue_item("SCALAR_LR", "0.4875", "lower scalar lr to 0.4875"),
+        make_queue_item("SCALAR_LR", "0.48125", "lower scalar lr to 0.48125"),
+        make_queue_item("SCALAR_LR", "0.475", "lower scalar lr to 0.475"),
+        make_queue_item("SCALAR_LR", "0.46875", "lower scalar lr to 0.46875"),
+    ],
+    "unembedding-followup": [
+        make_queue_item("UNEMBEDDING_LR", "0.0047", "lower unembedding lr to 0.0047"),
+        make_queue_item("UNEMBEDDING_LR", "0.0048", "raise unembedding lr to 0.0048"),
+    ],
 }
 
 
@@ -54,6 +64,8 @@ def select_candidates(context: dict[str, object], band: str) -> list[dict[str, o
         "cadence": {"TOTAL_BATCH_SIZE", "DEVICE_BATCH_SIZE"},
         "stability": {"WEIGHT_DECAY", "SCALAR_LR", "WARMDOWN_RATIO", "WARMUP_RATIO", "FINAL_LR_FRAC"},
         "weight-decay-ridge": {"WEIGHT_DECAY", "SCALAR_LR"},
+        "scalar-first": {"SCALAR_LR"},
+        "unembedding-followup": {"UNEMBEDDING_LR"},
     }[band]
     return [
         item
@@ -131,7 +143,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--branch", required=True, help="Branch to inspect, e.g. autoresearch/mar10")
     parser.add_argument(
         "--band",
-        choices=("optimizer-micro", "cadence", "stability", "weight-decay-ridge"),
+        choices=("optimizer-micro", "cadence", "stability", "weight-decay-ridge", "scalar-first", "unembedding-followup"),
         default="optimizer-micro",
     )
     parser.add_argument("--max-items", type=int, default=6)

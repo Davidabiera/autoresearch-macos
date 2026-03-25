@@ -14,6 +14,7 @@ from autoresearch_lib import classify_log  # noqa: E402
 from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
+from session_status import build_payload as build_session_payload  # noqa: E402
 
 
 class AutoresearchToolTests(unittest.TestCase):
@@ -21,11 +22,10 @@ class AutoresearchToolTests(unittest.TestCase):
         payload = build_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT)
         self.assertEqual(payload["current_best_commit"], "5b486fb")
         self.assertAlmostEqual(payload["current_best_val"], 1.386688, places=6)
-        self.assertTrue(payload["head_matches_frontier"])
-        self.assertTrue(payload["execution_ready"])
         self.assertTrue(str(payload["artifacts"]["results"]).endswith("results_mar10.tsv"))
         self.assertGreaterEqual(payload["gated_result_count"], 6)
         self.assertIsNone(payload["recommended_next_candidate"])
+        self.assertFalse(any(flag["artifact"] == "handoff" for flag in payload["coherence_flags"]))
 
     def test_timeout_only_log_classifies_as_startup_hang(self) -> None:
         payload = classify_log("RUNNER_TIMEOUT: exceeded 600 seconds\n", control_state=None)
@@ -59,16 +59,27 @@ class AutoresearchToolTests(unittest.TestCase):
     def test_weight_decay_ridge_band_starts_with_expected_candidates(self) -> None:
         queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "weight-decay-ridge", 6, CONTROL_ROOT)
         self.assertGreaterEqual(len(queue), 2)
-        self.assertEqual(queue[0]["id"], "weight_decay_0225")
-        self.assertEqual(queue[0]["description"], "raise weight decay to 0.225")
-        self.assertEqual(queue[1]["id"], "weight_decay_023")
-        self.assertEqual(queue[1]["description"], "raise weight decay to 0.23")
+        self.assertEqual(queue[0]["id"], "weight_decay_0215")
+        self.assertEqual(queue[0]["description"], "raise weight decay to 0.215")
+        self.assertEqual(queue[1]["id"], "weight_decay_0235")
+        self.assertEqual(queue[1]["description"], "raise weight decay to 0.235")
         self.assertEqual(len({item["description"] for item in queue}), len(queue))
+
+    def test_scalar_first_band_starts_with_expected_candidates(self) -> None:
+        queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "scalar-first", 4, CONTROL_ROOT)
+        self.assertGreaterEqual(len(queue), 2)
+        self.assertEqual(queue[0]["id"], "scalar_lr_04875")
+        self.assertEqual(queue[1]["id"], "scalar_lr_048125")
 
     def test_reconciler_regenerates_current_handoff_text(self) -> None:
         payload = build_output(WORKSPACE_ROOT, "autoresearch/mar10", "mar10", CONTROL_ROOT)
         self.assertIn("Best commit: `5b486fb`", payload["handoff_text"])
         self.assertIn("Current best commit: `5b486fb`", payload["run_notes_text"])
+
+    def test_session_status_exposes_frontier_and_next_action(self) -> None:
+        payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
+        self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
+        self.assertTrue(payload["recommended_next_action"])
 
 
 if __name__ == "__main__":

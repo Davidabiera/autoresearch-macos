@@ -12,9 +12,11 @@ from autoresearch_lib import (
     artifact_paths,
     coherence_flags,
     collect_frontier_context,
+    control_frontier_is_current,
     count_non_informative,
     format_constant_map,
     maybe_short_commit,
+    missing_handoff_is_non_blocking,
     summarize_artifact_status,
 )
 
@@ -50,6 +52,8 @@ def build_payload(target_root: Path, branch: str, control_root: Path | None) -> 
             "run_notes": str(paths["run_notes"]),
             "control_state": str(paths["control_state"]),
             "gated_results": str(paths["gated_results"]),
+            "repeatability_results": str(paths["repeatability_results"]),
+            "active_run": str(paths["active_run"]),
             "control_report": str(paths["control_report"]),
             "canonical_eval": str(paths["canonical_eval"]),
         },
@@ -138,6 +142,8 @@ def render_markdown(target_root: Path, context: dict[str, object], payload: dict
                 canonical_value,
             )
         )
+    elif missing_handoff_is_non_blocking(context, target_root) and control_frontier_is_current(context, target_root):
+        lines.append("- handoff: missing (non-blocking; control snapshot/state/report are current)")
     else:
         lines.append("- handoff: missing")
 

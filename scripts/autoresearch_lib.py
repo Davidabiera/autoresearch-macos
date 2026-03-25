@@ -46,6 +46,15 @@ SUMMARY_PATTERNS = {
     "eval_seconds": re.compile(r"^eval_seconds:\s+([0-9.]+)$", re.MULTILINE),
     "total_seconds": re.compile(r"^total_seconds:\s+([0-9.]+)$", re.MULTILINE),
 }
+RESULT_FLOAT_FIELDS = (
+    "val_bpb",
+    "memory_gb",
+    "startup_seconds",
+    "warmup_seconds",
+    "training_seconds",
+    "eval_seconds",
+    "total_seconds",
+)
 RUNNER_TIMEOUT_RE = re.compile(r"RUNNER_TIMEOUT: exceeded ([0-9]+) seconds")
 STEP_PROGRESS_RE = re.compile(
     r"step\s+(\d{5}).*?dt:\s+([0-9]+)ms.*?remaining:\s*([0-9]+)s"
@@ -131,9 +140,20 @@ def artifact_paths(
         "control_root": resolved_control_root,
         "control_state": resolved_control_root / "state" / f"overnight_{resolved_tag}.json",
         "gated_results": resolved_control_root / "state" / f"gated_results_{resolved_tag}.jsonl",
+        "repeatability_results": resolved_control_root / "state" / f"repeatability_{resolved_tag}.jsonl",
+        "active_run": resolved_control_root / "state" / f"active_run_{resolved_tag}.json",
         "control_report": resolved_control_root / "reports" / f"overnight_{resolved_tag}.md",
         "control_queue": resolved_control_root / "queues" / f"{resolved_tag}_overnight.jsonl",
     }
+
+
+def result_ledger_path(control_root: Path, tag: str, session_kind: str) -> Path:
+    name = "repeatability" if session_kind == "repeatability" else "gated_results"
+    return control_root / "state" / f"{name}_{tag}.jsonl"
+
+
+def active_run_path(control_root: Path, tag: str) -> Path:
+    return control_root / "state" / f"active_run_{tag}.json"
 
 
 def run_git(target_root: Path, args: list[str]) -> str:
@@ -247,6 +267,29 @@ def parse_results(results_path: Path) -> list[ResultRow]:
     return rows
 
 
+def resolve_results_source(primary_path: Path, snapshot_path: Path) -> tuple[Path, list[ResultRow]]:
+    candidates: list[Path] = []
+    if primary_path.exists():
+        candidates.append(primary_path)
+    if snapshot_path.exists() and snapshot_path not in candidates:
+        candidates.append(snapshot_path)
+    if not candidates:
+        raise AutoresearchError(f"results file not found: {primary_path} or {snapshot_path}")
+
+    first_error: AutoresearchError | None = None
+    for path in candidates:
+        try:
+            rows = parse_results(path)
+            best_result(rows)
+            return path, rows
+        except AutoresearchError as exc:
+            if first_error is None:
+                first_error = exc
+            continue
+    assert first_error is not None
+    raise first_error
+
+
 def best_result(rows: list[ResultRow]) -> ResultRow:
     informative = [row for row in rows if row.val_bpb is not None]
     if not informative:
@@ -350,7 +393,13 @@ def parse_queue_file(path: Path) -> list[QueueItem]:
     return items
 
 
-def parse_gated_results(path: Path) -> list[dict[str, Any]]:
+def _maybe_float(value: Any) -> float | None:
+    if value in {None, "", "NA"}:
+        return None
+    return float(value)
+
+
+def parse_result_ledger(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     rows: list[dict[str, Any]] = []
@@ -359,21 +408,36 @@ def parse_gated_results(path: Path) -> list[dict[str, Any]]:
         if not stripped:
             continue
         data = json.loads(stripped)
-        val_bpb = data.get("val_bpb")
-        memory_gb = data.get("memory_gb")
         payload = {
             "id": str(data.get("id") or ""),
             "description": str(data.get("description") or ""),
             "commit": str(data.get("commit") or ""),
             "status": str(data.get("status") or ""),
             "status_class": str(data.get("status_class") or ""),
-            "informative": bool(data.get("informative")) or val_bpb is not None or str(data.get("status") or "") in {"keep", "discard"},
+            "session_kind": str(data.get("session_kind") or ""),
+            "issue_scope": str(data.get("issue_scope") or ""),
+            "reason": data.get("reason"),
+            "log_path": data.get("log_path"),
+            "source_branch": data.get("source_branch"),
+            "informative": bool(data.get("informative"))
+            or data.get("val_bpb") not in {None, "", "NA"}
+            or str(data.get("status") or "") in {"keep", "discard"},
             "suppress_planner": data.get("suppress_planner"),
-            "val_bpb": None if val_bpb in {None, "", "NA"} else float(val_bpb),
-            "memory_gb": None if memory_gb in {None, "", "NA"} else float(memory_gb),
         }
+        for key in RESULT_FLOAT_FIELDS:
+            payload[key] = _maybe_float(data.get(key))
+        if data.get("runner_timeout_seconds") is not None:
+            payload["runner_timeout_seconds"] = int(data["runner_timeout_seconds"])
         rows.append(payload)
     return rows
+
+
+def parse_gated_results(path: Path) -> list[dict[str, Any]]:
+    return parse_result_ledger(path)
+
+
+def parse_repeatability_results(path: Path) -> list[dict[str, Any]]:
+    return parse_result_ledger(path)
 
 
 def gated_result_is_final(item: dict[str, Any]) -> bool:
@@ -628,8 +692,7 @@ def collect_frontier_context(
     tag: str | None = None,
 ) -> dict[str, Any]:
     paths = artifact_paths(target_root.resolve(), branch, control_root=control_root, tag=tag)
-    results_path = paths["results"] if Path(paths["results"]).exists() else paths["results_snapshot"]
-    rows = parse_results(Path(results_path))
+    results_path, rows = resolve_results_source(Path(paths["results"]), Path(paths["results_snapshot"]))
     best = best_result(rows)
     best_commit_short = maybe_short_commit(target_root, best.commit) or best.commit
     repo_branch = current_branch(target_root)
@@ -639,6 +702,7 @@ def collect_frontier_context(
     control_report = parse_control_report(paths["control_report"])
     handoff_frontier = parse_handoff_frontier(paths["handoff"])
     gated_results = parse_gated_results(paths["gated_results"])
+    repeatability_results = parse_repeatability_results(paths["repeatability_results"])
     gated_ids, gated_descriptions = gated_result_metadata(gated_results)
     best_train_constants = read_commit_train_constants(target_root, best.commit)
     current_train_constants = parse_python_constants(target_root / "train.py")
@@ -662,6 +726,7 @@ def collect_frontier_context(
         "control_report": control_report,
         "handoff_frontier": handoff_frontier,
         "gated_results": gated_results,
+        "repeatability_results": repeatability_results,
         "gated_suppressed_ids": gated_ids,
         "gated_suppressed_descriptions": gated_descriptions,
         "best_train_constants": best_train_constants,
@@ -671,6 +736,30 @@ def collect_frontier_context(
         "nearest_losses": nearest_clean_losses(rows, best.val_bpb or 0.0),
         "git_status_lines": git_status_lines(target_root),
     }
+
+
+def control_frontier_is_current(context: dict[str, Any], target_root: Path) -> bool:
+    best_commit_short = context["best_commit_short"]
+    best_val = context["best"].val_bpb or 0.0
+    control_state = context["control_state"]
+    control_report = context["control_report"]
+    if not control_state or not control_report:
+        return False
+    state_commit = maybe_short_commit(target_root, str(control_state.get("current_best_commit") or ""))
+    report_commit = maybe_short_commit(target_root, str(control_report.get("end_best_commit") or ""))
+    state_val = control_state.get("current_best_val")
+    report_val = control_report.get("end_best_val")
+    if state_commit != best_commit_short or report_commit != best_commit_short:
+        return False
+    if state_val is None or report_val is None:
+        return False
+    return abs(float(state_val) - best_val) < 1e-9 and abs(float(report_val) - best_val) < 1e-9
+
+
+def missing_handoff_is_non_blocking(context: dict[str, Any], target_root: Path) -> bool:
+    results_path = Path(str(context["results_path"]))
+    using_snapshot = results_path.name.startswith("results_")
+    return using_snapshot and control_frontier_is_current(context, target_root)
 
 
 def summarize_artifact_status(
@@ -790,7 +879,7 @@ def coherence_flags(context: dict[str, Any], target_root: Path, branch: str) -> 
                     "message": f"handoff frontier is stale (`{handoff_commit}` / `{handoff_val:.6f}`)",
                 }
             )
-    else:
+    elif not missing_handoff_is_non_blocking(context, target_root):
         flags.append(
             {
                 "severity": "warning",
@@ -831,6 +920,28 @@ def coherence_flags(context: dict[str, Any], target_root: Path, branch: str) -> 
             )
         seen_descriptions.add(description)
     return flags
+
+
+def axis_from_item_id(item_id: str) -> str:
+    lowered = item_id.lower()
+    prefixes = sorted((name.lower() for name in ALLOWED_ASSIGNMENTS), key=len, reverse=True)
+    for prefix in prefixes:
+        marker = prefix + "_"
+        if lowered.startswith(marker):
+            return prefix
+    return lowered.split("_", 1)[0]
+
+
+def best_nonkeep_by_axis(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    best_by_axis: dict[str, dict[str, Any]] = {}
+    for item in rows:
+        if item.get("status") != "discard" or item.get("val_bpb") is None:
+            continue
+        axis = axis_from_item_id(str(item.get("id") or ""))
+        current = best_by_axis.get(axis)
+        if current is None or float(item["val_bpb"]) < float(current["val_bpb"]):
+            best_by_axis[axis] = item
+    return best_by_axis
 
 
 def count_non_informative(control_state: dict[str, Any] | None) -> dict[str, int]:

@@ -28,7 +28,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from autoresearch_lib import gated_result_metadata, parse_gated_results
+from autoresearch_lib import (
+    active_run_path,
+    classify_log,
+    gated_result_metadata,
+    parse_gated_results,
+    result_ledger_path,
+)
 
 
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent
@@ -163,12 +169,20 @@ def parse_results_descriptions(results_path: Path) -> set[str]:
     return descriptions
 
 
-def gated_results_path(tag: str) -> Path:
-    return CONTROL_ROOT / "state" / f"gated_results_{tag}.jsonl"
-
-
-def gated_results_tag(default_tag: str) -> str:
+def control_tag(default_tag: str) -> str:
     return os.environ.get("AUTORESEARCH_GATED_RESULTS_TAG", default_tag)
+
+
+def exploration_results_path(tag: str) -> Path:
+    return result_ledger_path(CONTROL_ROOT, control_tag(tag), "exploration")
+
+
+def session_results_path(tag: str, session_kind: str) -> Path:
+    return result_ledger_path(CONTROL_ROOT, control_tag(tag), session_kind)
+
+
+def repeatability_results_path(tag: str) -> Path:
+    return result_ledger_path(CONTROL_ROOT, control_tag(tag), "repeatability")
 
 
 def parse_gated_result_descriptions(path: Path) -> set[str]:
@@ -176,8 +190,8 @@ def parse_gated_result_descriptions(path: Path) -> set[str]:
     return descriptions
 
 
-def append_gated_result(tag: str, payload: dict[str, Any]) -> None:
-    path = gated_results_path(gated_results_tag(tag))
+def append_session_result(tag: str, session_kind: str, payload: dict[str, Any]) -> None:
+    path = session_results_path(tag, session_kind)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as handle:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
@@ -214,8 +228,8 @@ def load_queue_file(queue_path: Path) -> list[Experiment]:
             if not isinstance(data["description"], str) or not data["description"].strip():
                 raise RunnerError(f"invalid description on line {lineno} of {queue_path}")
             assignments = data["assignments"]
-            if not isinstance(assignments, dict) or not assignments:
-                raise RunnerError(f"assignments must be a non-empty object on line {lineno} of {queue_path}")
+            if not isinstance(assignments, dict):
+                raise RunnerError(f"assignments must be an object on line {lineno} of {queue_path}")
             normalized: dict[str, str] = {}
             for key, value in assignments.items():
                 if key not in ALLOWED_ASSIGNMENTS:
@@ -268,6 +282,34 @@ def read_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text())
     except Exception as exc:
         raise RunnerError(f"failed to parse state file {path}: {exc}") from exc
+
+
+def active_pointer_path(tag: str) -> Path:
+    return active_run_path(CONTROL_ROOT, control_tag(tag))
+
+
+def active_pointer_payload(state: dict[str, Any], state_path: Path, report_path: Path) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "tag": state["tag"],
+        "control_tag": state["control_tag"],
+        "branch": state["branch"],
+        "session_kind": state["session_kind"],
+        "state_path": str(state_path),
+        "report_path": str(report_path),
+        "queue_path": state["queue_path"],
+        "started_at": state["started_at"],
+        "active_experiment_id": state.get("active_experiment_id"),
+        "finished": bool(state.get("finished")),
+        "stopped_reason": state.get("stopped_reason"),
+    }
+    if state.get("ended_at") is not None:
+        payload["ended_at"] = state["ended_at"]
+    return payload
+
+
+def persist_state(state: dict[str, Any], state_path: Path, report_path: Path) -> None:
+    write_json(state_path, state)
+    write_json(active_pointer_path(str(state["tag"])), active_pointer_payload(state, state_path, report_path))
 
 
 def validate_runtime_divisibility(train_constants: dict[str, Any], prepare_constants: dict[str, Any]) -> tuple[bool, str | None]:
@@ -431,18 +473,33 @@ def run_training(log_path: Path, timeout_seconds: int) -> tuple[int, str | None]
 def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path: Path, log_dir: Path) -> dict[str, Any]:
     queue_path = Path(args.queue)
     queue_items = load_queue_file(queue_path)
-    existing_descriptions = parse_results_descriptions(RESULTS_PATH) | parse_gated_result_descriptions(
-        gated_results_path(gated_results_tag(tag))
-    )
+    if args.session_kind == "exploration":
+        invalid = [item.id for item in queue_items if len(item.assignments) != 1]
+        if invalid:
+            joined = ", ".join(invalid)
+            raise RunnerError(f"exploration queues must contain single-variable items; invalid ids: {joined}")
+    else:
+        invalid = [item.id for item in queue_items if len(item.assignments) > 1]
+        if invalid:
+            joined = ", ".join(invalid)
+            raise RunnerError(f"repeatability queues may only contain baseline or single-variable items; invalid ids: {joined}")
+    existing_descriptions: set[str] = set()
+    if args.session_kind == "exploration":
+        existing_descriptions = parse_results_descriptions(RESULTS_PATH) | parse_gated_result_descriptions(
+            exploration_results_path(tag)
+        )
     resolved_queue, skipped = seed_resolved_queue(queue_items, existing_descriptions)
     return {
         "branch": args.branch,
         "tag": tag,
+        "control_tag": control_tag(tag),
+        "session_kind": args.session_kind,
         "queue_path": str(queue_path),
         "state_path": str(state_path),
         "report_path": str(report_path),
         "log_dir": str(log_dir),
         "started_at": time.time(),
+        "ended_at": None,
         "start_best_commit": args.best_commit,
         "start_best_val": args.best_val,
         "current_best_commit": args.best_commit,
@@ -467,6 +524,9 @@ def load_or_init_state(args: argparse.Namespace) -> tuple[dict[str, Any], Path, 
         if not state_path.exists():
             raise RunnerError(f"--resume requested but state file does not exist: {state_path}")
         state = read_json(state_path)
+        state.setdefault("control_tag", control_tag(tag))
+        state.setdefault("session_kind", args.session_kind)
+        state.setdefault("ended_at", None)
         return state, state_path, report_path, log_dir
     state = init_state(args, tag, state_path, report_path, log_dir)
     return state, state_path, report_path, log_dir
@@ -495,7 +555,7 @@ def runtime_skip(state: dict[str, Any], item: dict[str, Any], reason: str, state
     state["skipped"].append({"id": item["id"], "reason": reason})
     state["queue_index"] += 1
     state["active_experiment_id"] = None
-    write_json(state_path, state)
+    persist_state(state, state_path, Path(state["report_path"]))
 
 
 def finish_report(state: dict[str, Any], report_path: Path, stop_reason: str) -> None:
@@ -510,6 +570,7 @@ def finish_report(state: dict[str, Any], report_path: Path, stop_reason: str) ->
         "",
         "## Summary",
         "",
+        f"- session kind: `{state['session_kind']}`",
         f"- start best: `{state['start_best_commit']}` / `{state['start_best_val']:.6f}`",
         f"- end best: `{state['current_best_commit']}` / `{state['current_best_val']:.6f}`",
         f"- elapsed hours: `{elapsed_hours:.2f}`",
@@ -569,15 +630,113 @@ def append_handoff_summary(state: dict[str, Any], report_path: Path, stop_reason
         handle.write("\n".join(block) + "\n")
 
 
+def early_stop_reason(state: dict[str, Any], args: argparse.Namespace) -> str | None:
+    if state.get("session_kind") != "exploration":
+        return None
+    if args.early_stop_floor is None or args.early_stop_after is None:
+        return None
+    informative = [
+        item
+        for item in state["completed"]
+        if item.get("status") in {"keep", "discard"} and item.get("val_bpb") is not None
+    ]
+    if len(informative) < args.early_stop_after:
+        return None
+    window = informative[: args.early_stop_after]
+    if any(item.get("status") == "keep" for item in window):
+        return None
+    if any(float(item["val_bpb"]) <= args.early_stop_floor for item in window):
+        return None
+    return (
+        f"early stop: first {args.early_stop_after} informative results all exceeded "
+        f"{args.early_stop_floor:.6f}"
+    )
+
+
 def should_stop(state: dict[str, Any], args: argparse.Namespace) -> str | None:
     elapsed_hours = (time.time() - state["started_at"]) / 3600.0
     if elapsed_hours >= args.hours:
         return f"elapsed time reached {args.hours} hours"
     if args.max_experiments is not None and state["attempted"] >= args.max_experiments:
         return f"max_experiments reached ({args.max_experiments})"
+    stop = early_stop_reason(state, args)
+    if stop is not None:
+        return stop
     if state["queue_index"] >= len(state["resolved_queue"]):
         return "queue exhausted"
     return None
+
+
+def read_log_text(log_path: Path | None) -> str:
+    if log_path is None or not log_path.exists():
+        return ""
+    return log_path.read_text(errors="replace")
+
+
+def build_ledger_entry(
+    state: dict[str, Any],
+    item: dict[str, Any],
+    commit: str,
+    status: str,
+    classification: dict[str, Any],
+    log_path: Path | None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "id": item["id"],
+        "commit": commit,
+        "description": item["description"],
+        "informative": bool(classification.get("informative")),
+        "issue_scope": classification.get("issue_scope"),
+        "log_path": str(log_path) if log_path is not None else None,
+        "reason": classification.get("reason"),
+        "session_kind": state["session_kind"],
+        "source_branch": state["branch"],
+        "status": status,
+        "status_class": classification.get("status_class"),
+        "suppress_planner": state["session_kind"] == "exploration"
+        and (
+            bool(classification.get("informative"))
+            or classification.get("status_class") in {"config-invalid", "resource-oom"}
+        ),
+        "val_bpb": classification.get("val_bpb"),
+    }
+    for key in (
+        "memory_gb",
+        "startup_seconds",
+        "warmup_seconds",
+        "training_seconds",
+        "eval_seconds",
+        "total_seconds",
+        "runner_timeout_seconds",
+    ):
+        if classification.get(key) is not None:
+            entry[key] = classification.get(key)
+    return entry
+
+
+def build_completed_entry(
+    item: dict[str, Any],
+    commit: str,
+    status: str,
+    classification: dict[str, Any],
+    log_relpath: str | None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "id": item["id"],
+        "commit": commit,
+        "status": status,
+        "val_bpb": classification.get("val_bpb"),
+        "memory_gb": classification.get("memory_gb", 0.0) or 0.0,
+        "description": item["description"],
+        "reason": classification.get("reason"),
+        "log_path": log_relpath,
+        "status_class": classification.get("status_class"),
+        "issue_scope": classification.get("issue_scope"),
+    }
+    for key in ("startup_seconds", "warmup_seconds", "training_seconds", "eval_seconds", "total_seconds"):
+        if classification.get(key) is not None:
+            entry[key] = classification[key]
+    return entry
 
 
 def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, report_path: Path, log_dir: Path) -> None:
@@ -587,185 +746,130 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         if stop_reason is not None:
             state["finished"] = True
             state["stopped_reason"] = stop_reason
-            write_json(state_path, state)
+            state["active_experiment_id"] = None
+            state["ended_at"] = time.time()
+            persist_state(state, state_path, report_path)
             finish_report(state, report_path, stop_reason)
             append_handoff_summary(state, report_path, stop_reason)
             return
 
         item = state["resolved_queue"][state["queue_index"]]
         state["active_experiment_id"] = item["id"]
-        write_json(state_path, state)
+        persist_state(state, state_path, report_path)
 
         git_reset_hard(state["current_best_commit"])
-        current_descriptions = parse_results_descriptions(RESULTS_PATH)
-        current_descriptions.update(parse_gated_result_descriptions(gated_results_path(gated_results_tag(state["tag"]))))
-        if item["description"] in current_descriptions:
+        current_descriptions: set[str] = set()
+        if state["session_kind"] == "exploration":
+            current_descriptions = parse_results_descriptions(RESULTS_PATH)
+            current_descriptions.update(parse_gated_result_descriptions(exploration_results_path(state["tag"])))
+        if state["session_kind"] == "exploration" and item["description"] in current_descriptions:
             runtime_skip(state, item, "description already exists in results.tsv or gated results", state_path)
-            continue
-
-        before = TRAIN_PATH.read_text()
-        changed = rewrite_train_constants(item["assignments"])
-        if not changed or TRAIN_PATH.read_text() == before:
-            runtime_skip(state, item, "assignments already match current frontier", state_path)
             continue
 
         log_path = log_dir / f"{item['id']}.log"
         log_relpath = str(log_path.relative_to(ROOT))
-        commit = commit_experiment(item, log_relpath)
+        base_repeat = state["session_kind"] == "repeatability" and not item["assignments"]
+        if base_repeat:
+            commit = current_head()
+        else:
+            before = TRAIN_PATH.read_text()
+            changed = rewrite_train_constants(item["assignments"])
+            if not changed or TRAIN_PATH.read_text() == before:
+                runtime_skip(state, item, "assignments already match current frontier", state_path)
+                continue
+            commit = commit_experiment(item, log_relpath)
 
         train_constants = parse_python_constants(TRAIN_PATH)
         valid, invalid_reason = validate_runtime_divisibility(train_constants, prepare_constants)
         if not valid:
             append_results_row(commit, "0.000000", "0.0", "crash", f"{item['description']} ({invalid_reason})")
-            append_gated_result(
+            classification = {
+                "informative": False,
+                "issue_scope": "experiment-specific",
+                "reason": invalid_reason,
+                "status_class": "config-invalid",
+                "val_bpb": None,
+            }
+            append_session_result(
                 state["tag"],
-                {
-                    "id": item["id"],
-                    "commit": commit,
-                    "description": item["description"],
-                    "informative": False,
-                    "reason": invalid_reason,
-                    "status": "crash",
-                    "status_class": "config-invalid",
-                    "suppress_planner": True,
-                    "val_bpb": None,
-                },
+                state["session_kind"],
+                build_ledger_entry(state, item, commit, "crash", classification, None),
             )
             state["attempted"] += 1
             state["crash_count"] += 1
-            state["completed"].append(
-                {
-                    "id": item["id"],
-                    "commit": commit,
-                    "status": "crash",
-                    "val_bpb": None,
-                    "memory_gb": 0.0,
-                    "description": item["description"],
-                    "reason": invalid_reason,
-                    "log_path": None,
-                }
-            )
+            state["completed"].append(build_completed_entry(item, commit, "crash", classification, None))
             git_reset_hard(state["current_best_commit"])
             state["queue_index"] += 1
             state["active_experiment_id"] = None
-            write_json(state_path, state)
+            persist_state(state, state_path, report_path)
             continue
 
         returncode, run_error = run_training(log_path, args.timeout_seconds)
+        log_text = read_log_text(log_path)
         if returncode != 0:
             append_results_row(commit, "0.000000", "0.0", "crash", item["description"])
-            append_gated_result(
+            classification = classify_log(log_text, state)
+            if classification["status_class"] == "unknown-crash" and run_error:
+                classification["reason"] = run_error
+            append_session_result(
                 state["tag"],
-                {
-                    "id": item["id"],
-                    "commit": commit,
-                    "description": item["description"],
-                    "informative": False,
-                    "reason": run_error or f"train exited with code {returncode}",
-                    "status": "crash",
-                    "status_class": "runner-crash",
-                    "suppress_planner": False,
-                    "val_bpb": None,
-                },
+                state["session_kind"],
+                build_ledger_entry(state, item, commit, "crash", classification, log_path),
             )
             state["attempted"] += 1
             state["crash_count"] += 1
-            state["completed"].append(
-                {
-                    "id": item["id"],
-                    "commit": commit,
-                    "status": "crash",
-                    "val_bpb": None,
-                    "memory_gb": 0.0,
-                    "description": item["description"],
-                    "reason": run_error or f"train exited with code {returncode}",
-                    "log_path": log_relpath,
-                }
-            )
+            state["completed"].append(build_completed_entry(item, commit, "crash", classification, log_relpath))
             git_reset_hard(state["current_best_commit"])
             state["queue_index"] += 1
             state["active_experiment_id"] = None
-            write_json(state_path, state)
+            persist_state(state, state_path, report_path)
             continue
 
         try:
             val_bpb, memory_gb = parse_summary_from_log(log_path)
         except RunnerError as exc:
             append_results_row(commit, "0.000000", "0.0", "crash", item["description"])
-            append_gated_result(
+            classification = classify_log(log_text, state)
+            classification["reason"] = str(exc)
+            append_session_result(
                 state["tag"],
-                {
-                    "id": item["id"],
-                    "commit": commit,
-                    "description": item["description"],
-                    "informative": False,
-                    "reason": str(exc),
-                    "status": "crash",
-                    "status_class": "summary-missing",
-                    "suppress_planner": False,
-                    "val_bpb": None,
-                },
+                state["session_kind"],
+                build_ledger_entry(state, item, commit, "crash", classification, log_path),
             )
             state["attempted"] += 1
             state["crash_count"] += 1
-            state["completed"].append(
-                {
-                    "id": item["id"],
-                    "commit": commit,
-                    "status": "crash",
-                    "val_bpb": None,
-                    "memory_gb": 0.0,
-                    "description": item["description"],
-                    "reason": str(exc),
-                    "log_path": log_relpath,
-                }
-            )
+            state["completed"].append(build_completed_entry(item, commit, "crash", classification, log_relpath))
             git_reset_hard(state["current_best_commit"])
             state["queue_index"] += 1
             state["active_experiment_id"] = None
-            write_json(state_path, state)
+            persist_state(state, state_path, report_path)
             continue
 
         improved = val_bpb < float(state["current_best_val"])
         status = "keep" if improved else "discard"
         append_results_row(commit, format_float(val_bpb), f"{memory_gb:.1f}", status, item["description"])
-        append_gated_result(
+        classification = classify_log(log_text, state)
+        classification["memory_gb"] = round(memory_gb, 1)
+        classification["val_bpb"] = round(val_bpb, 6)
+        append_session_result(
             state["tag"],
-            {
-                "id": item["id"],
-                "commit": commit,
-                "description": item["description"],
-                "informative": True,
-                "memory_gb": round(memory_gb, 1),
-                "status": status,
-                "status_class": "completed",
-                "suppress_planner": True,
-                "val_bpb": round(val_bpb, 6),
-            },
+            state["session_kind"],
+            build_ledger_entry(state, item, commit, status, classification, log_path),
         )
         state["attempted"] += 1
         if improved:
             state["keep_count"] += 1
-            state["current_best_commit"] = commit
-            state["current_best_val"] = val_bpb
+            if state["session_kind"] == "exploration":
+                state["current_best_commit"] = commit
+                state["current_best_val"] = val_bpb
         else:
             state["discard_count"] += 1
+        if state["session_kind"] == "exploration" or not base_repeat:
             git_reset_hard(state["current_best_commit"])
-        state["completed"].append(
-            {
-                "id": item["id"],
-                "commit": commit,
-                "status": status,
-                "val_bpb": round(val_bpb, 6),
-                "memory_gb": round(memory_gb, 1),
-                "description": item["description"],
-                "reason": None,
-                "log_path": log_relpath,
-            }
-        )
+        state["completed"].append(build_completed_entry(item, commit, status, classification, log_relpath))
         state["queue_index"] += 1
         state["active_experiment_id"] = None
-        write_json(state_path, state)
+        persist_state(state, state_path, report_path)
 
 
 def parse_args() -> argparse.Namespace:
@@ -779,6 +883,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--max-experiments", type=int)
+    parser.add_argument("--session-kind", choices=("exploration", "repeatability"), default="exploration")
+    parser.add_argument("--early-stop-floor", type=float)
+    parser.add_argument("--early-stop-after", type=int)
     return parser.parse_args()
 
 
@@ -792,6 +899,7 @@ def main() -> int:
     if args.dry_run:
         print_dry_run(state)
         return 0
+    persist_state(state, state_path, report_path)
     run_loop(args, state, state_path, report_path, log_dir)
     return 0
 
