@@ -28,6 +28,10 @@ Runner defaults:
 - `--stall-abort-step-max 20`
 - `--stall-abort-count 3`
 
+Launch helper:
+
+- `/tmp/autoresearch-reliability/scripts/run_mar10_dedicated_repeatability.sh`
+
 ## Queues
 
 - dedicated-session repeatability block:
