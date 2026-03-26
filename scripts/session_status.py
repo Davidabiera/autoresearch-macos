@@ -145,6 +145,10 @@ def fixed_step_rebooted_launcher() -> str:
     return "/private/tmp/autoresearch-reliability/scripts/run_mar10_frontier_fixed_step_rebooted.sh"
 
 
+def fixed_step_post_reboot_launcher() -> str:
+    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_fixed_step_post_reboot.sh"
+
+
 def fixed_step_repeatability_launcher() -> str:
     return "/private/tmp/autoresearch-reliability/scripts/run_mar10_repeatability_fixed_step.sh"
 
@@ -464,7 +468,10 @@ def recommended_next_action(
                 f"then the rebooted dedicated-session block: `{fixed_step_same_session_launcher()}` then `{fixed_step_rebooted_launcher()}`"
             )
         if str(latest_backend.get("stage_id") or "") == "frontier_fixed_step_same_session":
-            return f"same-session fixed-step isolation passed; reboot and run `{fixed_step_rebooted_launcher()}`"
+            return (
+                "same-session fixed-step isolation passed; reboot into a dedicated session and run the combined "
+                f"post-reboot trust path: `{fixed_step_post_reboot_launcher()}`"
+            )
         if str(latest_backend.get("stage_id") or "") == "frontier_fixed_step_rebooted":
             return f"local fixed-step isolation block passed; run `{fixed_step_repeatability_launcher()}`"
         return f"launch the dedicated repeatability rerun `{repeatability_queue_path(context)}`"
