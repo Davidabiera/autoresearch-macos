@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 WORKSPACE_ROOT = Path("/Users/davidabiera/Projects/team/autoresearch-macos")
 CONTROL_ROOT = WORKSPACE_ROOT / "worktrees" / "control" / "control"
 
-from autoresearch_lib import classify_log, evaluate_repeatability_gate  # noqa: E402
+from autoresearch_lib import classify_log, evaluate_frontier_isolation_gate, evaluate_repeatability_gate  # noqa: E402
 from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import terminate_process_group  # noqa: E402
@@ -20,6 +20,7 @@ from reconcile_session import build_output  # noqa: E402
 from session_orchestrator import plan_preflight_blockers  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
+    frontier_isolation_decision,
     repeatability_branching_decision,
 )
 
@@ -170,6 +171,24 @@ class AutoresearchToolTests(unittest.TestCase):
         evaluation = evaluate_repeatability_gate(items, frontier_anchor_val=1.386688)
         self.assertFalse(evaluation["passed"])
         self.assertIn("worse than the canonical anchor", evaluation["reason"])
+
+    def test_frontier_isolation_gate_rejects_anchor_drift(self) -> None:
+        items = [
+            {"id": "frontier_repeat_isolation_a", "val_bpb": 1.3950, "status_class": "post-train-overrun", "num_steps": 334},
+            {"id": "frontier_repeat_isolation_b", "val_bpb": 1.3954, "status_class": "post-train-overrun", "num_steps": 333},
+        ]
+        evaluation = evaluate_frontier_isolation_gate(items, frontier_anchor_val=1.386688)
+        self.assertFalse(evaluation["passed"])
+        self.assertIn("worse than the canonical anchor", evaluation["reason"])
+
+    def test_frontier_isolation_decision_requires_environment_forensics_on_drift(self) -> None:
+        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.386688}
+        items = [
+            {"id": "frontier_repeat_isolation_a", "val_bpb": 1.3950, "status_class": "post-train-overrun", "num_steps": 334},
+            {"id": "frontier_repeat_isolation_b", "val_bpb": 1.3954, "status_class": "post-train-overrun", "num_steps": 333},
+        ]
+        action = frontier_isolation_decision(context, items)
+        self.assertIn("backend/environment investigation", action)
 
     def test_orchestrator_preflight_blocks_missing_execution_root(self) -> None:
         plan = {

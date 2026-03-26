@@ -14,6 +14,7 @@ from autoresearch_lib import (
     best_nonkeep_by_axis,
     collect_frontier_context,
     current_branch,
+    evaluate_frontier_isolation_gate,
     evaluate_repeatability_gate,
     foreign_research_processes,
     load_json,
@@ -120,6 +121,10 @@ def scalar_canary_queue_path(context: dict[str, Any]) -> Path:
     return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_scalar_first_canary.jsonl"
 
 
+def frontier_isolation_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_frontier_isolation.jsonl"
+
+
 def current_repeatability_results(
     active_run: dict[str, Any] | None,
     active_state: dict[str, Any] | None,
@@ -142,6 +147,16 @@ def repeatability_branching_decision(context: dict[str, Any], items: list[dict[s
     return (
         "environment is stable and weight decay does not materially win; "
         f"close weight decay and launch the scalar-first canary `{scalar_canary_queue_path(context)}`"
+    )
+
+
+def frontier_isolation_decision(context: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    evaluation = evaluate_frontier_isolation_gate(items, frontier_anchor_val=float(context["current_best_val"]))
+    if not evaluation["passed"]:
+        return f"pause hyperparameter search and continue backend/environment investigation; {evaluation['reason']}"
+    return (
+        "frontier isolation passed; baseline repeats are clean enough to reopen the controlled loop. "
+        f"Next queue: `{repeatability_queue_path(context)}`"
     )
 
 
@@ -245,6 +260,8 @@ def recommended_next_action(
                     "treat the single baseline probe as signal only; launch "
                     f"the dedicated-session repeatability block `{repeatability_queue_path(context)}`"
                 )
+            if "frontier-isolation" in active_branch or active_queue.endswith("mar10_frontier_isolation.jsonl"):
+                return frontier_isolation_decision(context, session_results)
             return repeatability_branching_decision(context, session_results)
         weight_decay_results = [
             item

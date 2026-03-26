@@ -1169,3 +1169,47 @@ def evaluate_repeatability_gate(
         result["next_stage"] = "scalar_first_canary"
         result["reason"] = "environment is stable and weight decay does not materially win"
     return result
+
+
+def evaluate_frontier_isolation_gate(
+    items: list[dict[str, Any]],
+    frontier_anchor_val: float | None = None,
+) -> dict[str, Any]:
+    failure = repeatability_failure_reason(items)
+    frontier_repeats = [item for item in items if str(item.get("id") or "").startswith("frontier_repeat")]
+    frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
+    frontier_mean = sum(frontier_vals) / len(frontier_vals) if frontier_vals else None
+    frontier_spread = max(frontier_vals) - min(frontier_vals) if len(frontier_vals) >= 2 else None
+    frontier_anchor_delta = (
+        frontier_mean - frontier_anchor_val
+        if frontier_mean is not None and frontier_anchor_val is not None
+        else None
+    )
+    result: dict[str, Any] = {
+        "passed": False,
+        "failure_reason": failure,
+        "frontier_count": len(frontier_vals),
+        "frontier_mean": frontier_mean,
+        "frontier_spread": frontier_spread,
+        "frontier_anchor_val": frontier_anchor_val,
+        "frontier_anchor_delta": frontier_anchor_delta,
+        "reason": None,
+    }
+    if failure:
+        result["reason"] = failure
+        return result
+    if len(frontier_vals) < 2:
+        result["reason"] = "frontier isolation session does not yet have two completed baseline repeats"
+        return result
+    if frontier_spread is not None and frontier_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        result["reason"] = f"frontier isolation spread is {frontier_spread:.6f}"
+        return result
+    if frontier_anchor_delta is not None and frontier_anchor_delta > FRONTIER_ANCHOR_DRIFT_THRESHOLD:
+        result["reason"] = (
+            f"frontier isolation mean is {frontier_mean:.6f}, which is {frontier_anchor_delta:.6f} "
+            f"worse than the canonical anchor {frontier_anchor_val:.6f}"
+        )
+        return result
+    result["passed"] = True
+    result["reason"] = "frontier isolation passed; baseline repeats are clean and close to the canonical anchor"
+    return result
