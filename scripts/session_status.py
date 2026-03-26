@@ -159,6 +159,7 @@ def finished_active_stage_summary(
             "role": "backend_isolation",
             "passed": bool(evaluation["passed"]),
             "reason": evaluation["reason"],
+            "failure_class": evaluation.get("failure_class"),
             "evaluation": evaluation,
             "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
         }
@@ -169,6 +170,7 @@ def finished_active_stage_summary(
             "role": "repeatability",
             "passed": bool(evaluation["passed"]),
             "reason": evaluation["reason"],
+            "failure_class": evaluation.get("failure_class"),
             "evaluation": evaluation,
             "recommended_search_stage": evaluation.get("next_stage"),
             "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
