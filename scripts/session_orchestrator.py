@@ -318,7 +318,11 @@ def stage_result(active_run: dict[str, Any], stage: dict[str, Any], plan: dict[s
         summary["search_eligible"] = bool(evaluation["passed"])
         return summary
     if stage.get("success_rule") == "frontier_isolation_gate":
-        evaluation = evaluate_frontier_isolation_gate(completed, frontier_anchor_val=float(plan["best_val"]))
+        evaluation = evaluate_frontier_isolation_gate(
+            completed,
+            frontier_anchor_val=float(plan["best_val"]),
+            required_repeats=int(stage.get("required_repeats", 2)),
+        )
         summary["evaluation"] = evaluation
         summary["passed"] = bool(evaluation["passed"])
         summary["reason"] = evaluation["reason"]
@@ -550,7 +554,9 @@ def next_stage_from_summary(summary: dict[str, Any], stage: dict[str, Any]) -> t
         if stage.get("success_rule") == "repeatability_gate":
             return summary.get("recommended_search_stage"), summary["reason"]
         return None, summary["reason"]
-    on_failure = stage.get("on_failure") or {}
+    failure_class = str(summary.get("failure_class") or "")
+    on_failure_by_class = stage.get("on_failure_by_class") or {}
+    on_failure = on_failure_by_class.get(failure_class) or stage.get("on_failure") or {}
     if on_failure.get("next_stage"):
         return str(on_failure["next_stage"]), str(on_failure.get("reason") or summary["reason"])
     return None, str(on_failure.get("reason") or summary["reason"])

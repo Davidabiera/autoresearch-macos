@@ -21,6 +21,7 @@ from session_orchestrator import next_stage_from_summary, plan_preflight_blocker
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
     frontier_isolation_decision,
+    frontier_soak_decision,
     repeatability_branching_decision,
 )
 
@@ -257,6 +258,16 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertFalse(evaluation["passed"])
         self.assertEqual(evaluation["failure_class"], "post-train-summary-missing")
 
+    def test_frontier_soak_gate_requires_six_clean_repeats(self) -> None:
+        items = [
+            {"id": "frontier_repeat_soak_a", "val_bpb": 1.3867, "status_class": "post-train-overrun", "num_steps": 351},
+            {"id": "frontier_repeat_soak_b", "val_bpb": 1.3868, "status_class": "post-train-overrun", "num_steps": 352},
+        ]
+        evaluation = evaluate_frontier_isolation_gate(items, frontier_anchor_val=1.386688, required_repeats=6)
+        self.assertFalse(evaluation["passed"])
+        self.assertEqual(evaluation["failure_class"], "insufficient-clean-repeats")
+        self.assertIn("6 completed baseline repeats", evaluation["reason"])
+
     def test_frontier_isolation_decision_requires_environment_forensics_on_drift(self) -> None:
         context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.386688}
         items = [
@@ -265,6 +276,20 @@ class AutoresearchToolTests(unittest.TestCase):
         ]
         action = frontier_isolation_decision(context, items)
         self.assertIn("backend/environment investigation", action)
+
+    def test_frontier_soak_decision_earns_repeatability_when_thresholds_hold(self) -> None:
+        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.386688}
+        items = [
+            {"id": "frontier_repeat_soak_a", "val_bpb": 1.3867, "status_class": "post-train-overrun", "num_steps": 351},
+            {"id": "frontier_repeat_soak_b", "val_bpb": 1.3869, "status_class": "post-train-overrun", "num_steps": 352},
+            {"id": "frontier_repeat_soak_c", "val_bpb": 1.3866, "status_class": "post-train-overrun", "num_steps": 353},
+            {"id": "frontier_repeat_soak_d", "val_bpb": 1.3868, "status_class": "post-train-overrun", "num_steps": 351},
+            {"id": "frontier_repeat_soak_e", "val_bpb": 1.3865, "status_class": "post-train-overrun", "num_steps": 352},
+            {"id": "frontier_repeat_soak_f", "val_bpb": 1.3867, "status_class": "post-train-overrun", "num_steps": 353},
+        ]
+        action = frontier_soak_decision(context, items)
+        self.assertIn("repeatability earned", action)
+        self.assertIn("mar10_repeatability_dedicated_session.jsonl", action)
 
     def test_orchestrator_preflight_blocks_missing_execution_root(self) -> None:
         plan = {
@@ -289,6 +314,23 @@ class AutoresearchToolTests(unittest.TestCase):
         next_stage, reason = next_stage_from_summary(summary, stage)
         self.assertEqual(next_stage, "dedicated_repeatability")
         self.assertEqual(reason, "frontier isolation passed")
+
+    def test_backend_isolation_quality_drift_branches_to_frontier_soak(self) -> None:
+        summary = {"passed": False, "reason": "frontier isolation spread is 0.003500", "failure_class": "quality-drift"}
+        stage = {
+            "id": "backend_isolation",
+            "success_rule": "frontier_isolation_gate",
+            "on_failure_by_class": {
+                "quality-drift": {
+                    "next_stage": "frontier_soak",
+                    "reason": "backend isolation completed cleanly but drifted; continue frontier-only soak measurement",
+                }
+            },
+            "on_failure": {"action": "stop", "reason": "backend isolation failed; continue backend/environment investigation"},
+        }
+        next_stage, reason = next_stage_from_summary(summary, stage)
+        self.assertEqual(next_stage, "frontier_soak")
+        self.assertIn("frontier-only soak measurement", reason)
 
     def test_dedicated_repeatability_success_stops_even_with_recommended_search_stage(self) -> None:
         summary = {

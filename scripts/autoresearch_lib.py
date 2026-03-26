@@ -1312,6 +1312,7 @@ def evaluate_repeatability_gate(
 def evaluate_frontier_isolation_gate(
     items: list[dict[str, Any]],
     frontier_anchor_val: float | None = None,
+    required_repeats: int = 2,
 ) -> dict[str, Any]:
     failure = repeatability_failure_detail(items)
     frontier_repeats = [item for item in items if str(item.get("id") or "").startswith("frontier_repeat")]
@@ -1327,6 +1328,7 @@ def evaluate_frontier_isolation_gate(
         "passed": False,
         "failure_reason": failure["reason"] if failure else None,
         "failure_class": failure["failure_class"] if failure else None,
+        "required_repeats": required_repeats,
         "frontier_count": len(frontier_vals),
         "frontier_mean": frontier_mean,
         "frontier_spread": frontier_spread,
@@ -1337,9 +1339,11 @@ def evaluate_frontier_isolation_gate(
     if failure:
         result["reason"] = failure["reason"]
         return result
-    if len(frontier_vals) < 2:
+    if len(frontier_vals) < required_repeats:
         result["failure_class"] = "insufficient-clean-repeats"
-        result["reason"] = "frontier isolation session does not yet have two completed baseline repeats"
+        result["reason"] = (
+            f"frontier isolation session does not yet have {required_repeats} completed baseline repeats"
+        )
         return result
     if frontier_spread is not None and frontier_spread > REPEATABILITY_SPREAD_THRESHOLD:
         result["failure_class"] = "quality-drift"

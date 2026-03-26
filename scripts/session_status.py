@@ -125,6 +125,10 @@ def frontier_isolation_queue_path(context: dict[str, Any]) -> Path:
     return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_frontier_isolation.jsonl"
 
 
+def frontier_soak_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_frontier_soak.jsonl"
+
+
 def current_repeatability_results(
     active_run: dict[str, Any] | None,
     active_state: dict[str, Any] | None,
@@ -152,8 +156,13 @@ def finished_active_stage_summary(
     session_results = current_repeatability_results(active_run, active_state, repeatability_results)
     stage_id = str(active_run.get("stage_id") or "")
     queue_path = str(active_run.get("queue_path") or "")
-    if stage_id in {"backend_isolation", "frontier_isolation"} or queue_matches(context, queue_path, "frontier_isolation"):
-        evaluation = evaluate_frontier_isolation_gate(session_results, frontier_anchor_val=float(context["current_best_val"]))
+    if stage_id in {"backend_isolation", "frontier_isolation", "frontier_soak"} or queue_matches(context, queue_path, "frontier_isolation") or queue_matches(context, queue_path, "frontier_soak"):
+        required_repeats = 6 if stage_id == "frontier_soak" or queue_matches(context, queue_path, "frontier_soak") else 2
+        evaluation = evaluate_frontier_isolation_gate(
+            session_results,
+            frontier_anchor_val=float(context["current_best_val"]),
+            required_repeats=required_repeats,
+        )
         return {
             "stage_id": stage_id or "backend_isolation",
             "role": "backend_isolation",
@@ -184,7 +193,7 @@ def latest_completed_orchestrator_stage(orchestrator_state: dict[str, Any] | Non
     completed = list(orchestrator_state.get("completed_stages") or [])
     for stage in reversed(completed):
         stage_id = str(stage.get("stage_id") or "")
-        if role == "backend_isolation" and stage_id == "backend_isolation":
+        if role == "backend_isolation" and stage_id in {"backend_isolation", "frontier_soak"}:
             return stage
         if role == "repeatability" and stage_id == "dedicated_repeatability":
             return stage
@@ -264,6 +273,38 @@ def frontier_isolation_decision(context: dict[str, Any], items: list[dict[str, A
         "frontier isolation passed; baseline repeats are clean enough to reopen the controlled loop. "
         f"Next queue: `{repeatability_queue_path(context)}`"
     )
+
+
+def frontier_soak_decision(context: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    evaluation = evaluate_frontier_isolation_gate(
+        items,
+        frontier_anchor_val=float(context["current_best_val"]),
+        required_repeats=6,
+    )
+    if not evaluation["passed"]:
+        return f"search blocked; frontier soak confirmed environment drift: {evaluation['reason']}"
+    return (
+        "repeatability earned; frontier soak settled inside trust thresholds. "
+        f"Next queue: `{repeatability_queue_path(context)}`"
+    )
+
+
+def overnight_recommendation(
+    environment: dict[str, Any],
+    blockers: list[str],
+    active_run: dict[str, Any] | None,
+) -> str:
+    if blockers:
+        return "search blocked"
+    if active_run and not bool(active_run.get("finished")):
+        return "search blocked"
+    latest_repeat = environment.get("latest_repeatability_stage")
+    latest_backend = environment.get("latest_backend_isolation")
+    if latest_repeat and latest_repeat.get("passed") and latest_backend and latest_backend.get("passed"):
+        return "next-day canary earned"
+    if latest_backend and latest_backend.get("passed"):
+        return "repeatability earned"
+    return "search blocked"
 
 
 def early_stop_signal(active_state: dict[str, Any] | None, floor: float, after: int) -> dict[str, Any] | None:
@@ -354,12 +395,24 @@ def recommended_next_action(
     if latest_repeat and latest_repeat.get("passed") and latest_backend and latest_backend.get("passed"):
         recommended_stage = latest_repeat.get("recommended_search_stage") or environment.get("next_stage") or "day-2 canary"
         return (
-            "environment recovered; stop tonight and schedule the next bounded canary on a later run window: "
+            "next-day canary earned; stop tonight and schedule the next bounded canary on a later run window: "
             f"`{recommended_stage}`"
         )
     if latest_backend and not latest_backend.get("passed") and not (active_run and not bool(active_run.get("finished"))):
-        return f"pause hyperparameter search and continue backend/environment investigation; {latest_backend.get('reason')}"
+        failure_class = str(latest_backend.get("failure_class") or "")
+        if failure_class in {"post-train-summary-missing", "post-train-eval-crash"}:
+            return f"search blocked; completion-path failed: {latest_backend.get('reason')}"
+        if failure_class == "quality-drift" and str(latest_backend.get("stage_id") or "") != "frontier_soak":
+            return (
+                "backend isolation completed cleanly but drifted; use the overnight window for a frontier-only soak block: "
+                f"`{frontier_soak_queue_path(context)}`"
+            )
+        if str(latest_backend.get("stage_id") or "") == "frontier_soak":
+            return frontier_soak_decision(context, latest_backend.get("completed") or [])
+        return f"search blocked; quality-drift or runtime trust failure: {latest_backend.get('reason')}"
     if latest_backend and latest_backend.get("passed") and not latest_repeat and not (active_run and not bool(active_run.get("finished"))):
+        if str(latest_backend.get("stage_id") or "") == "frontier_soak":
+            return f"repeatability earned; launch the dedicated repeatability rerun `{repeatability_queue_path(context)}` on the next controlled window"
         return f"launch the dedicated repeatability rerun `{repeatability_queue_path(context)}`"
 
     signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)
@@ -378,6 +431,8 @@ def recommended_next_action(
                     "treat the single baseline probe as signal only; launch "
                     f"the dedicated-session repeatability block `{repeatability_queue_path(context)}`"
                 )
+            if "frontier-soak" in active_branch or active_queue.endswith("mar10_frontier_soak.jsonl"):
+                return frontier_soak_decision(context, session_results)
             if "frontier-isolation" in active_branch or active_queue.endswith("mar10_frontier_isolation.jsonl"):
                 return frontier_isolation_decision(context, session_results)
             return repeatability_branching_decision(context, session_results)
@@ -443,6 +498,7 @@ def build_payload(
         "preflight_blockers": blockers,
         "live_stall_warning": live_warning,
         "environment": environment,
+        "overnight_recommendation": overnight_recommendation(environment, blockers, active_run),
         "last_exploration_results": exploration_recent,
         "last_repeatability_results": repeatability_recent,
         "last_noncanonical_signals": noncanonical_recent,
@@ -508,6 +564,7 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         "## Environment Trust",
         "",
         f"- trust state: `{environment['trust_state']}`",
+        f"- overnight recommendation: `{payload['overnight_recommendation']}`",
         f"- next stage: `{environment.get('next_stage')}`",
         f"- search blocked reason: `{environment.get('search_blocked_reason')}`",
         f"- latest backend-isolation bundle: `{environment.get('bundle_path')}`",
