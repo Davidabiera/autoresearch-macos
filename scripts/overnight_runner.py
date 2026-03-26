@@ -463,6 +463,10 @@ def git_reset_hard(commit: str) -> None:
     run_cmd(["git", "reset", "--hard", commit])
 
 
+def reset_target_commit(state: dict[str, Any]) -> str:
+    return str(state.get("execution_base_commit") or state["current_best_commit"])
+
+
 def commit_experiment(item: dict[str, Any], log_relpath: str) -> str:
     run_cmd(["git", "add", "train.py"])
     message = f"feat: overnight {item['id']}"
@@ -598,6 +602,7 @@ def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path
         "start_best_val": args.best_val,
         "current_best_commit": args.best_commit,
         "current_best_val": args.best_val,
+        "execution_base_commit": current_head(),
         "queue_index": 0,
         "attempted": 0,
         "keep_count": 0,
@@ -629,6 +634,7 @@ def load_or_init_state(args: argparse.Namespace) -> tuple[dict[str, Any], Path, 
         state.setdefault("runtime_forensics_bundle", os.environ.get("AUTORESEARCH_RUNTIME_FORENSICS_BUNDLE"))
         state.setdefault("last_heartbeat_at", time.time())
         state.setdefault("ended_at", None)
+        state.setdefault("execution_base_commit", current_head())
         return state, state_path, report_path, log_dir
     state = init_state(args, tag, state_path, report_path, log_dir)
     return state, state_path, report_path, log_dir
@@ -863,7 +869,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         state["active_experiment_id"] = item["id"]
         persist_state(state, state_path, report_path)
 
-        git_reset_hard(state["current_best_commit"])
+        git_reset_hard(reset_target_commit(state))
         current_descriptions: set[str] = set()
         if state["session_kind"] == "exploration":
             current_descriptions = parse_results_descriptions(RESULTS_PATH)
@@ -904,7 +910,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(build_completed_entry(item, commit, "crash", classification, None))
-            git_reset_hard(state["current_best_commit"])
+            git_reset_hard(reset_target_commit(state))
             state["queue_index"] += 1
             state["active_experiment_id"] = None
             persist_state(state, state_path, report_path)
@@ -932,7 +938,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(build_completed_entry(item, commit, "crash", classification, log_relpath))
-            git_reset_hard(state["current_best_commit"])
+            git_reset_hard(reset_target_commit(state))
             state["queue_index"] += 1
             state["active_experiment_id"] = None
             persist_state(state, state_path, report_path)
@@ -952,7 +958,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(build_completed_entry(item, commit, "crash", classification, log_relpath))
-            git_reset_hard(state["current_best_commit"])
+            git_reset_hard(reset_target_commit(state))
             state["queue_index"] += 1
             state["active_experiment_id"] = None
             persist_state(state, state_path, report_path)
@@ -975,10 +981,11 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             if state["session_kind"] == "exploration":
                 state["current_best_commit"] = commit
                 state["current_best_val"] = val_bpb
+                state["execution_base_commit"] = commit
         else:
             state["discard_count"] += 1
         if state["session_kind"] == "exploration" or not base_repeat:
-            git_reset_hard(state["current_best_commit"])
+            git_reset_hard(reset_target_commit(state))
         state["completed"].append(build_completed_entry(item, commit, status, classification, log_relpath))
         state["queue_index"] += 1
         state["active_experiment_id"] = None

@@ -15,7 +15,7 @@ CONTROL_ROOT = WORKSPACE_ROOT / "worktrees" / "control" / "control"
 from autoresearch_lib import classify_log, default_plan_path, evaluate_frontier_isolation_gate, evaluate_repeatability_gate  # noqa: E402
 from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
-from overnight_runner import terminate_process_group  # noqa: E402
+from overnight_runner import reset_target_commit, terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
 from session_orchestrator import next_stage_from_summary, plan_preflight_blockers  # noqa: E402
 from session_status import (  # noqa: E402
@@ -54,6 +54,10 @@ class AutoresearchToolTests(unittest.TestCase):
             terminate_process_group(dummy)
         self.assertEqual(dummy.terminate_called, 1)
         self.assertEqual(dummy.kill_called, 1)
+
+    def test_reset_target_commit_prefers_execution_base_commit(self) -> None:
+        state = {"current_best_commit": "5b486fb", "execution_base_commit": "9847c21"}
+        self.assertEqual(reset_target_commit(state), "9847c21")
 
     def test_frontier_status_reports_canonical_best_and_current_handoff(self) -> None:
         payload = build_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT)
