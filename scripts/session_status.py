@@ -241,8 +241,6 @@ def recommended_next_action(
         return "previous orchestrator session is interrupted; inspect its state and relaunch through the orchestrator"
     if active_run_is_interrupted:
         return "previous stage runner is interrupted; inspect its state and relaunch through the orchestrator"
-    if orchestrator_state and orchestrator_state.get("next_action"):
-        return str(orchestrator_state["next_action"])
 
     signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)
     if live_warning and active_run and not bool(active_run.get("finished")):
@@ -280,6 +278,9 @@ def recommended_next_action(
             return f"run next queued exploration item `{candidate['id']}`"
         return "define the next search band; the current exploration queue is exhausted"
 
+    if orchestrator_state and orchestrator_state.get("next_action"):
+        return str(orchestrator_state["next_action"])
+
     if context["fresh_unresolved_queue"]:
         candidate = context["fresh_unresolved_queue"][0]
         return f"run next queued exploration item `{candidate['id']}`"
@@ -296,6 +297,7 @@ def build_payload(
     context = collect_frontier_context(target_root, branch, control_root=control_root)
     paths = artifact_paths(target_root, branch, control_root=control_root, tag=context["tag"])
     frontier = build_frontier_payload(target_root, branch, control_root)
+    context["current_best_val"] = frontier["current_best_val"]
     active_run, active_state = load_active_state(paths)
     active_run_is_interrupted = active_run_interrupted(active_run)
     orchestrator_state = load_orchestrator_state(paths)

@@ -72,6 +72,35 @@ Interpretation:
 - this probe is signal only; the next proof run must still be a rebooted dedicated-session repeatability block
 - this probe also exposed a runner edge case: when live stall abort attempted a process-group `SIGKILL`, the runner hit a `PermissionError`; the runner now falls back to direct process termination in that case
 
+## Frontier-Only Isolation Results
+
+A later 2-item frontier-only isolation block removed the mixed repeatability queue and reran only the canonical frontier from a clean disposable worktree:
+
+- `frontier_repeat_isolation_a`
+  - `val_bpb`: `1.394587`
+  - `training_seconds`: `300.5`
+  - `total_seconds`: `479.9`
+  - `num_steps`: `337`
+  - `max_dt_ms`: `9509`
+- `frontier_repeat_isolation_b`
+  - `val_bpb`: `1.392884`
+  - `training_seconds`: `300.6`
+  - `total_seconds`: `475.7`
+  - `num_steps`: `340`
+  - `max_dt_ms`: `2046`
+- frontier isolation spread: `0.001703`
+- frontier isolation mean: `1.393736`
+- anchor delta vs canonical frontier `1.386688`: `+0.007048`
+
+Interpretation:
+
+- catastrophic `30s+` early stalls did not reproduce in the isolation block
+- baseline quality still degraded materially relative to the canonical anchor
+- the environment therefore remains untrusted even when the run shape looks operationally clean
+- search should stay frozen because the system can now produce both:
+  - visibly unstable runs
+  - superficially clean but materially degraded frontier repeats
+
 ## System-Level Evidence
 
 - `pmset -g log` for the repeatability window shows `0` sleep/wake events since boot and no sleep transition during the run
@@ -92,14 +121,29 @@ Interpretation:
 
 ## Next Forensics Pass
 
-1. run a single frontier baseline gate with live stall abort enabled:
-   - `--stall-abort-ms 30000`
-   - `--stall-abort-step-max 20`
-   - `--stall-abort-count 3`
-2. run it from a clean disposable worktree rooted at the execution baseline
-3. minimize background desktop load during the run
-4. if the frontier still stalls early, escalate to machine-state/MPS investigation before any new research axis
-5. if the frontier runs cleanly, rerun one more baseline repeat before reopening `SCALAR_LR`
+The next loop is backend/environment isolation, not search:
+
+1. keep hyperparameter search frozen
+2. collect only frontier-baseline evidence until two repeats are both:
+   - full-length (`num_steps >= 300`)
+   - within `0.0010` of `1.386688`
+3. before the next baseline run:
+   - reboot
+   - close Chrome
+   - close Adobe Acrobat
+   - close Adobe Desktop Service
+   - close Messages
+   - avoid active desktop use during the run
+4. on the next baseline run, capture:
+   - `pmset -g log | tail -n 200`
+   - `memory_pressure`
+   - `ps -Ao pid,etime,command | rg "train.py|overnight_runner.py|python .*train.py"`
+   - unified-log slice around the run window for `thermal`, `Jetsam`, `memorystatus`, `MPS`, and `Metal`
+5. compare three classes of frontier evidence:
+   - visibly unstable: `frontier_repeat_a`, `frontier_repeat_clean_c`, `frontier_repeat_dedicated_b`
+   - superficially clean but degraded: `frontier_repeat_dedicated_a`, `frontier_repeat_isolation_a`, `frontier_repeat_isolation_b`
+   - historical anchor: canonical frontier `5b486fb / 1.386688`
+6. reopen the controlled autonomy loop only after two clean frontier-only repeats satisfy the anchor tolerance
 
 ## Operational Default Until Resolved
 
