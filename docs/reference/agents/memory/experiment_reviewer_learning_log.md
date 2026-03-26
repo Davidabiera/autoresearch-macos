@@ -163,3 +163,29 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that unattended or low-interference sessions are materially safer for frontier comparisons than active-desktop sessions with heavy browser/app load
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260326-frontier-repeatability-rebaseline-autoresearch-mar24-night]
+- Parent workflow: strict calibration gate before resuming post-repeatability search
+- Trigger: two quiet unchanged-frontier reruns after removing the known competing trainer
+- Inputs used: current train.py at the confirmed frontier, archived quiet rerun logs, and the accepted gate thresholds (`0.003 val_bpb`, `10 steps`) for forming a live baseline cluster
+- Output delivered: accepted live baseline for the current machine state without logging a search verdict to `results.tsv`
+- What worked: the two quiet repeats landed close enough to form a stable cluster, with the better run at `1.391030` and `341` steps and the second at `1.392260` and `339` steps
+- Friction: neither quiet repeat reproduced the historical best `1.382862 @ 360` steps, so the branch now carries both a historical best and a quieter-state live baseline
+- Uncertainty: low uncertainty that the current live baseline cluster is real; medium uncertainty on whether a more unattended session could recover the historical best band
+- Reusable pattern: when two quiet unchanged-frontier reruns miss the historical best but cluster tightly within predefined tolerances, accept the better run as the live baseline and resume bounded search from there
+- Proposed dossier change: note the distinction between historical best and current live baseline on wall-clock-limited desktop runs
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260326-152320_autoresearch-mar24-night_29f7359_b92a0a3]
+- Parent workflow: first bounded optimizer probe after accepting a quiet-state live baseline
+- Trigger: completed run with valid summary metrics after lowering `WEIGHT_DECAY` from `0.20` to `0.19`
+- Inputs used: program.md, README.md, current train.py, last commit `b92a0a3`, run.log, results.tsv, and the accepted quiet live baseline (`1.391030 @ 341` steps)
+- Output delivered: discard verdict with one strict TSV row and one frontier-restore recommendation
+- What worked: the run completed cleanly and provided a directly comparable optimizer-axis result against the new quiet-state baseline
+- Friction: throughput regressed from the accepted quiet baseline band, finishing at `331` steps instead of `339-341`, which reduced confidence that any metric improvement could have been attributed cleanly to the hyperparameter
+- Uncertainty: low uncertainty on the discard verdict because both the metric and step count regressed versus the accepted quiet baseline
+- Reusable pattern: after re-baselining a noisy wall-clock environment, discard optimizer changes that lose on both `val_bpb` and `num_steps` relative to the accepted live baseline
+- Proposed dossier change: note that lower weight decay on the current Muon frontier degraded both quality and throughput under the accepted quiet-state baseline
+- Proposed AGENTS or skill change: none
+- Confidence: high
