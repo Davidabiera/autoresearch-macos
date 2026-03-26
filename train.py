@@ -10,6 +10,7 @@ os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 
 import gc
 import time
+import traceback
 from dataclasses import dataclass, asdict
 
 import sys
@@ -678,27 +679,79 @@ print()  # newline after \r training log
 
 total_tokens = step * TOTAL_BATCH_SIZE
 
-# Final eval
-model.eval()
-with autocast_ctx:
-    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+def emit_completion_marker(phase: str, total_seconds: float | None = None) -> None:
+    fields = [
+        f"phase={phase}",
+        f"num_steps={step}",
+        f"training_seconds={total_training_time:.1f}",
+    ]
+    if total_seconds is not None:
+        fields.append(f"total_seconds={total_seconds:.1f}")
+    print("completion_marker: " + " ".join(fields), flush=True)
 
-# Final summary
-t_end = time.time()
-startup_time = t_start_training - t_start
-steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - 10) / total_training_time / H100_BF16_PEAK_FLOPS if total_training_time > 0 else 0
-if device_type == "cuda":
-    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
-else:
-    peak_vram_mb = 0.0
 
-print("---")
-print(f"val_bpb:          {val_bpb:.6f}")
-print(f"training_seconds: {total_training_time:.1f}")
-print(f"total_seconds:    {t_end - t_start:.1f}")
-print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
-print(f"mfu_percent:      {steady_state_mfu:.2f}")
-print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
-print(f"num_steps:        {step}")
-print(f"num_params_M:     {num_params / 1e6:.1f}")
-print(f"depth:            {DEPTH}")
+def emit_completion_result(phase: str, total_seconds: float | None = None) -> None:
+    fields = [
+        f"completion_phase={phase}",
+        f"num_steps={step}",
+        f"training_seconds={total_training_time:.1f}",
+    ]
+    if total_seconds is not None:
+        fields.append(f"total_seconds={total_seconds:.1f}")
+    print("completion_result: " + " ".join(fields), flush=True)
+
+
+completion_phase = "post_train_newline"
+emit_completion_marker(completion_phase)
+
+try:
+    completion_phase = "pre_eval"
+    emit_completion_marker(completion_phase)
+    t_eval_start = time.time()
+    model.eval()
+    with autocast_ctx:
+        val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+    t_eval_end = time.time()
+    eval_seconds = t_eval_end - t_eval_start
+    completion_phase = "post_eval"
+    emit_completion_marker(completion_phase, total_seconds=t_eval_end - t_start)
+
+    completion_phase = "pre_summary"
+    emit_completion_marker(completion_phase, total_seconds=t_eval_end - t_start)
+    t_end = t_eval_end
+    startup_time = t_start_training - t_start
+    warmup_seconds = max(0.0, t_eval_start - t_start_training - total_training_time)
+    steady_state_mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE * (step - 10) / total_training_time / H100_BF16_PEAK_FLOPS if total_training_time > 0 else 0
+    if device_type == "cuda":
+        peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    else:
+        peak_vram_mb = 0.0
+
+    print("---")
+    print(f"val_bpb:          {val_bpb:.6f}")
+    print(f"startup_seconds:  {startup_time:.1f}")
+    print(f"warmup_seconds:   {warmup_seconds:.1f}")
+    print(f"training_seconds: {total_training_time:.1f}")
+    print(f"eval_seconds:     {eval_seconds:.1f}")
+    print(f"total_seconds:    {t_end - t_start:.1f}")
+    print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
+    print(f"mfu_percent:      {steady_state_mfu:.2f}")
+    print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
+    print(f"num_steps:        {step}")
+    print(f"num_params_M:     {num_params / 1e6:.1f}")
+    print(f"depth:            {DEPTH}")
+
+    completion_phase = "post_summary"
+    emit_completion_marker(completion_phase, total_seconds=t_end - t_start)
+    emit_completion_result(completion_phase, total_seconds=t_end - t_start)
+except BaseException as exc:
+    t_fail = time.time()
+    print(
+        f"completion_error: phase={completion_phase} exception={type(exc).__name__}: {exc}",
+        flush=True,
+    )
+    traceback.print_exc()
+    emit_completion_result(completion_phase, total_seconds=t_fail - t_start)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    raise
