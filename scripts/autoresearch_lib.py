@@ -864,6 +864,8 @@ def classify_log(
     }
     if metrics["num_steps"] is not None:
         payload["num_steps"] = int(metrics["num_steps"])
+    if metrics["num_steps"] is not None and metrics["training_seconds"] not in {None, 0}:
+        payload["steps_per_second"] = round(float(metrics["num_steps"]) / float(metrics["training_seconds"]), 4)
     for key in ("startup_seconds", "warmup_seconds", "eval_seconds"):
         if metrics[key] is not None:
             payload[key] = metrics[key]

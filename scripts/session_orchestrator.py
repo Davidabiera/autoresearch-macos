@@ -276,6 +276,8 @@ def build_stage_command(stage: dict[str, Any], plan: dict[str, Any], resume: boo
         command.extend(["--early-stop-floor", str(stage["early_stop_floor"])])
     if stage.get("early_stop_after") is not None:
         command.extend(["--early-stop-after", str(stage["early_stop_after"])])
+    if stage.get("trust_target_steps") is not None:
+        command.extend(["--trust-target-steps", str(stage["trust_target_steps"])])
     if resume:
         command.append("--resume")
     return command
@@ -357,6 +359,7 @@ def write_runtime_forensics_bundle(
         "plan_id": plan["plan_id"],
         "stage_id": stage["id"],
         "session_kind": stage["kind"],
+        "trust_target_steps": stage.get("trust_target_steps"),
         "branch": active_run.get("branch") if active_run else plan.get("execution_root"),
         "execution_root": active_run.get("execution_root") if active_run else plan.get("execution_root"),
         "control_root": active_run.get("control_root") if active_run else plan.get("control_root"),
@@ -391,6 +394,11 @@ def write_runtime_forensics_bundle(
             absolute_log = Path(str(active_run["execution_root"])) / str(log_path_value)
             item_copy["absolute_log_path"] = str(absolute_log)
             item_copy["max_dt_ms"] = max_dt_ms_from_log(absolute_log)
+            if item_copy.get("num_steps") is not None and item_copy.get("training_seconds") not in {None, 0}:
+                item_copy["steps_per_second"] = round(
+                    float(item_copy["num_steps"]) / float(item_copy["training_seconds"]),
+                    4,
+                )
             if absolute_log.exists():
                 shutil.copy2(absolute_log, target_log_root / absolute_log.name)
         val = item.get("val_bpb")
@@ -406,6 +414,7 @@ def write_runtime_forensics_bundle(
         "stage_id": stage["id"],
         "anchor_commit": plan["best_commit"],
         "anchor_val": anchor_val,
+        "trust_target_steps": stage.get("trust_target_steps"),
         "frontier_mean": evaluation.get("frontier_mean"),
         "frontier_spread": evaluation.get("frontier_spread"),
         "frontier_anchor_delta": evaluation.get("frontier_anchor_delta"),
@@ -438,9 +447,21 @@ def write_runtime_forensics_bundle(
             delta_text = "NA" if delta is None else f"{float(delta):+.6f}"
             max_dt = item.get("max_dt_ms")
             max_dt_text = "NA" if max_dt is None else str(int(max_dt))
+            steps_per_second = item.get("steps_per_second")
+            steps_per_second_text = "NA" if steps_per_second is None else f"{float(steps_per_second):.4f}"
+            training_seconds = item.get("training_seconds")
+            training_seconds_text = "NA" if training_seconds is None else f"{float(training_seconds):.1f}"
+            eval_seconds = item.get("eval_seconds")
+            eval_seconds_text = "NA" if eval_seconds is None else f"{float(eval_seconds):.1f}"
+            total_seconds = item.get("total_seconds")
+            total_seconds_text = "NA" if total_seconds is None else f"{float(total_seconds):.1f}"
+            completion_phase = item.get("completion_phase") or "NA"
             lines.append(
                 f"- `{item.get('id')}` `val_bpb={val_text}` `delta={delta_text}` "
-                f"`num_steps={item.get('num_steps')}` `max_dt_ms={max_dt_text}`"
+                f"`num_steps={item.get('num_steps')}` `training_seconds={training_seconds_text}` "
+                f"`eval_seconds={eval_seconds_text}` `total_seconds={total_seconds_text}` "
+                f"`steps_per_second={steps_per_second_text}` `max_dt_ms={max_dt_text}` "
+                f"`completion_phase={completion_phase}`"
             )
     else:
         lines.append("- none")
@@ -567,6 +588,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan", required=True)
     parser.add_argument("--mode", choices=("tonight", "overnight"), default="tonight")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
@@ -581,6 +603,16 @@ def main() -> int:
         for blocker in blockers:
             print(f"preflight blocker: {blocker}", file=sys.stderr)
         return 2
+    if args.dry_run:
+        execution_root = Path(str(plan["execution_root"])).resolve()
+        print(f"plan dry run OK: {plan['plan_id']}")
+        print(f"mode: {args.mode}")
+        print(f"execution root: {execution_root}")
+        print(f"current branch: {current_branch(execution_root)}")
+        for stage in plan["stages"]:
+            command = build_stage_command(stage, plan, resume=args.resume)
+            print(f"stage {stage['id']}: {' '.join(command)}")
+        return 0
 
     state_path = orchestrator_state_path(control_root, str(plan["tag"]))
     if args.resume and state_path.exists():

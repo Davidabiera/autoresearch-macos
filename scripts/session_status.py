@@ -129,6 +129,26 @@ def frontier_soak_queue_path(context: dict[str, Any]) -> Path:
     return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_frontier_soak.jsonl"
 
 
+def fixed_step_same_session_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_frontier_fixed_step_same_session.jsonl"
+
+
+def fixed_step_rebooted_queue_path(context: dict[str, Any]) -> Path:
+    return Path(str(context["paths"]["control_root"])) / "queues" / f"{context['tag']}_frontier_fixed_step_rebooted.jsonl"
+
+
+def fixed_step_same_session_launcher() -> str:
+    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_frontier_fixed_step_same_session.sh"
+
+
+def fixed_step_rebooted_launcher() -> str:
+    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_frontier_fixed_step_rebooted.sh"
+
+
+def fixed_step_repeatability_launcher() -> str:
+    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_repeatability_fixed_step.sh"
+
+
 def current_repeatability_results(
     active_run: dict[str, Any] | None,
     active_state: dict[str, Any] | None,
@@ -156,7 +176,7 @@ def finished_active_stage_summary(
     session_results = current_repeatability_results(active_run, active_state, repeatability_results)
     stage_id = str(active_run.get("stage_id") or "")
     queue_path = str(active_run.get("queue_path") or "")
-    if stage_id in {"backend_isolation", "frontier_isolation", "frontier_soak"} or queue_matches(context, queue_path, "frontier_isolation") or queue_matches(context, queue_path, "frontier_soak"):
+    if stage_id in {"backend_isolation", "frontier_isolation", "frontier_soak", "frontier_fixed_step_same_session", "frontier_fixed_step_rebooted"} or queue_matches(context, queue_path, "frontier_isolation") or queue_matches(context, queue_path, "frontier_soak") or queue_matches(context, queue_path, "frontier_fixed_step_same_session") or queue_matches(context, queue_path, "frontier_fixed_step_rebooted"):
         required_repeats = 6 if stage_id == "frontier_soak" or queue_matches(context, queue_path, "frontier_soak") else 2
         evaluation = evaluate_frontier_isolation_gate(
             session_results,
@@ -193,7 +213,7 @@ def latest_completed_orchestrator_stage(orchestrator_state: dict[str, Any] | Non
     completed = list(orchestrator_state.get("completed_stages") or [])
     for stage in reversed(completed):
         stage_id = str(stage.get("stage_id") or "")
-        if role == "backend_isolation" and stage_id in {"backend_isolation", "frontier_soak"}:
+        if role == "backend_isolation" and stage_id in {"backend_isolation", "frontier_soak", "frontier_fixed_step_same_session", "frontier_fixed_step_rebooted"}:
             return stage
         if role == "repeatability" and stage_id == "dedicated_repeatability":
             return stage
@@ -216,7 +236,20 @@ def environment_status(
     bundle_path = None
     if latest_backend:
         bundle_path = latest_backend.get("runtime_forensics_bundle")
-    if latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
+    latest_backend_stage_id = str(latest_backend.get("stage_id") or "") if latest_backend else ""
+    if latest_backend_stage_id == "frontier_soak":
+        state = "untrusted"
+        blocked_reason = "comparability recovery still requires fixed-step local isolation before repeatability can reopen"
+        next_stage = "frontier_fixed_step_same_session"
+    elif latest_backend_stage_id == "frontier_fixed_step_same_session":
+        state = "untrusted"
+        blocked_reason = "rebooted dedicated-session fixed-step isolation is still required before repeatability can reopen"
+        next_stage = "frontier_fixed_step_rebooted"
+    elif latest_backend_stage_id == "frontier_fixed_step_rebooted":
+        state = "conditionally recovered" if latest_backend and latest_backend.get("passed") else "untrusted"
+        blocked_reason = "fixed-step dedicated repeatability is still required before search can reopen"
+        next_stage = "dedicated_repeatability_fixed_step"
+    elif latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
         state = "search eligible"
         next_stage = str(latest_repeat.get("recommended_search_stage") or "day-2 canary")
     elif latest_backend and latest_backend.get("passed"):
@@ -235,10 +268,10 @@ def environment_status(
             state = "conditionally recovered"
             next_stage = "dedicated_repeatability"
             blocked_reason = "dedicated repeatability is in progress"
-        elif stage_id in {"backend_isolation", "frontier_isolation"}:
+        elif stage_id in {"backend_isolation", "frontier_isolation", "frontier_soak", "frontier_fixed_step_same_session", "frontier_fixed_step_rebooted"}:
             state = "untrusted"
-            next_stage = "backend_isolation"
-            blocked_reason = "backend isolation is in progress"
+            next_stage = stage_id
+            blocked_reason = f"{stage_id} is in progress"
             bundle_path = active_run.get("runtime_forensics_bundle")
     return {
         "trust_state": state,
@@ -282,10 +315,13 @@ def frontier_soak_decision(context: dict[str, Any], items: list[dict[str, Any]])
         required_repeats=6,
     )
     if not evaluation["passed"]:
-        return f"search blocked; frontier soak confirmed environment drift: {evaluation['reason']}"
+        return (
+            "search blocked; frontier soak confirmed environment drift. "
+            f"Next diagnostic stage: `{fixed_step_same_session_launcher()}`"
+        )
     return (
-        "repeatability earned; frontier soak settled inside trust thresholds. "
-        f"Next queue: `{repeatability_queue_path(context)}`"
+        "frontier soak finished with enough evidence to move into comparability recovery. "
+        f"Next stage: `{fixed_step_same_session_launcher()}`"
     )
 
 
@@ -302,6 +338,13 @@ def overnight_recommendation(
     latest_backend = environment.get("latest_backend_isolation")
     if latest_repeat and latest_repeat.get("passed") and latest_backend and latest_backend.get("passed"):
         return "next-day canary earned"
+    latest_backend_stage_id = str((environment.get("latest_backend_isolation") or {}).get("stage_id") or "")
+    if latest_backend_stage_id in {"frontier_soak", "frontier_fixed_step_same_session"}:
+        return "search blocked"
+    if latest_backend_stage_id == "frontier_fixed_step_rebooted" and latest_backend and latest_backend.get("passed"):
+        return "repeatability earned"
+    if latest_backend_stage_id == "frontier_fixed_step_rebooted":
+        return "search blocked"
     if latest_backend and latest_backend.get("passed"):
         return "repeatability earned"
     return "search blocked"
@@ -402,17 +445,28 @@ def recommended_next_action(
         failure_class = str(latest_backend.get("failure_class") or "")
         if failure_class in {"post-train-summary-missing", "post-train-eval-crash"}:
             return f"search blocked; completion-path failed: {latest_backend.get('reason')}"
+        if str(latest_backend.get("stage_id") or "") == "frontier_soak":
+            return frontier_soak_decision(context, latest_backend.get("completed") or [])
+        if str(latest_backend.get("stage_id") or "") == "frontier_fixed_step_same_session":
+            return f"search blocked; same-session fixed-step isolation failed: {latest_backend.get('reason')}"
+        if str(latest_backend.get("stage_id") or "") == "frontier_fixed_step_rebooted":
+            return f"search blocked; rebooted fixed-step isolation failed: {latest_backend.get('reason')}"
         if failure_class == "quality-drift" and str(latest_backend.get("stage_id") or "") != "frontier_soak":
             return (
                 "backend isolation completed cleanly but drifted; use the overnight window for a frontier-only soak block: "
                 f"`{frontier_soak_queue_path(context)}`"
             )
-        if str(latest_backend.get("stage_id") or "") == "frontier_soak":
-            return frontier_soak_decision(context, latest_backend.get("completed") or [])
         return f"search blocked; quality-drift or runtime trust failure: {latest_backend.get('reason')}"
     if latest_backend and latest_backend.get("passed") and not latest_repeat and not (active_run and not bool(active_run.get("finished"))):
         if str(latest_backend.get("stage_id") or "") == "frontier_soak":
-            return f"repeatability earned; launch the dedicated repeatability rerun `{repeatability_queue_path(context)}` on the next controlled window"
+            return (
+                "comparability recovery is next; run the fixed-step same-session isolation block now, "
+                f"then the rebooted dedicated-session block: `{fixed_step_same_session_launcher()}` then `{fixed_step_rebooted_launcher()}`"
+            )
+        if str(latest_backend.get("stage_id") or "") == "frontier_fixed_step_same_session":
+            return f"same-session fixed-step isolation passed; reboot and run `{fixed_step_rebooted_launcher()}`"
+        if str(latest_backend.get("stage_id") or "") == "frontier_fixed_step_rebooted":
+            return f"local fixed-step isolation block passed; run `{fixed_step_repeatability_launcher()}`"
         return f"launch the dedicated repeatability rerun `{repeatability_queue_path(context)}`"
 
     signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)

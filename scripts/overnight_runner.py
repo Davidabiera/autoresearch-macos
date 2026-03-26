@@ -65,6 +65,7 @@ ALLOWED_ASSIGNMENTS = {
     "WARMUP_RATIO",
     "WARMDOWN_RATIO",
     "FINAL_LR_FRAC",
+    "TRUST_TARGET_STEPS",
     "DEPTH",
     "ASPECT_RATIO",
     "HEAD_DIM",
@@ -459,6 +460,14 @@ def rewrite_train_constants(assignments: dict[str, str]) -> bool:
     return rewritten != original and changed
 
 
+def effective_assignments(state: dict[str, Any], item: dict[str, Any]) -> dict[str, str]:
+    assignments = dict(item["assignments"])
+    trust_target_steps = int(state.get("trust_target_steps") or 0)
+    if trust_target_steps > 0:
+        assignments["TRUST_TARGET_STEPS"] = str(trust_target_steps)
+    return assignments
+
+
 def git_reset_hard(commit: str) -> None:
     run_cmd(["git", "reset", "--hard", commit])
 
@@ -467,12 +476,12 @@ def reset_target_commit(state: dict[str, Any]) -> str:
     return str(state.get("execution_base_commit") or state["current_best_commit"])
 
 
-def commit_experiment(item: dict[str, Any], log_relpath: str) -> str:
+def commit_experiment(item: dict[str, Any], assignments: dict[str, str], log_relpath: str) -> str:
     run_cmd(["git", "add", "train.py"])
     message = f"feat: overnight {item['id']}"
     why = f"why: overnight experiment {item['description']}"
     changes = "what changed: " + ", ".join(
-        f"{key}={value}" for key, value in item["assignments"].items()
+        f"{key}={value}" for key, value in assignments.items()
     )
     verify = f"how verified: pending {' '.join(resolve_train_command())} > {log_relpath} 2>&1"
     run_cmd(["git", "commit", "-m", message, "-m", why, "-m", changes, "-m", verify])
@@ -591,6 +600,7 @@ def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path
         "stage_id": os.environ.get("AUTORESEARCH_STAGE_ID"),
         "launcher": os.environ.get("AUTORESEARCH_LAUNCHER"),
         "runtime_forensics_bundle": os.environ.get("AUTORESEARCH_RUNTIME_FORENSICS_BUNDLE"),
+        "trust_target_steps": int(args.trust_target_steps or 0),
         "queue_path": str(queue_path),
         "state_path": str(state_path),
         "report_path": str(report_path),
@@ -632,6 +642,7 @@ def load_or_init_state(args: argparse.Namespace) -> tuple[dict[str, Any], Path, 
         state.setdefault("stage_id", os.environ.get("AUTORESEARCH_STAGE_ID"))
         state.setdefault("launcher", os.environ.get("AUTORESEARCH_LAUNCHER"))
         state.setdefault("runtime_forensics_bundle", os.environ.get("AUTORESEARCH_RUNTIME_FORENSICS_BUNDLE"))
+        state.setdefault("trust_target_steps", int(args.trust_target_steps or 0))
         state.setdefault("last_heartbeat_at", time.time())
         state.setdefault("ended_at", None)
         state.setdefault("execution_base_commit", current_head())
@@ -647,7 +658,7 @@ def print_dry_run(state: dict[str, Any]) -> None:
     print(f"resolved_experiments: {len(state['resolved_queue'])}")
     for item in state["resolved_queue"]:
         candidate_constants = dict(train_constants)
-        for key, value in item["assignments"].items():
+        for key, value in effective_assignments(state, item).items():
             candidate_constants[key] = ast.literal_eval(value)
         valid, reason = validate_runtime_divisibility(candidate_constants, prepare_constants)
         payload = dict(item)
@@ -679,6 +690,7 @@ def finish_report(state: dict[str, Any], report_path: Path, stop_reason: str) ->
         "## Summary",
         "",
         f"- session kind: `{state['session_kind']}`",
+        f"- trust target steps: `{state.get('trust_target_steps', 0)}`",
         f"- start best: `{state['start_best_commit']}` / `{state['start_best_val']:.6f}`",
         f"- end best: `{state['current_best_commit']}` / `{state['current_best_val']:.6f}`",
         f"- elapsed hours: `{elapsed_hours:.2f}`",
@@ -801,6 +813,7 @@ def build_ledger_entry(
         "source_branch": state["branch"],
         "status": status,
         "status_class": classification.get("status_class"),
+        "trust_target_steps": int(state.get("trust_target_steps") or 0),
         "suppress_planner": state["session_kind"] == "exploration"
         and (
             bool(classification.get("informative"))
@@ -816,11 +829,17 @@ def build_ledger_entry(
         "eval_seconds",
         "total_seconds",
         "runner_timeout_seconds",
+        "steps_per_second",
+        "max_step_dt_ms",
+        "last_step_dt_ms",
     ):
         if classification.get(key) is not None:
             entry[key] = classification.get(key)
     if classification.get("num_steps") is not None:
         entry["num_steps"] = int(classification["num_steps"])
+    for key in ("completion_phase", "completion_error_phase", "completion_error_type", "completion_error_message", "runner_abort_reason"):
+        if classification.get(key) is not None:
+            entry[key] = classification.get(key)
     return entry
 
 
@@ -842,12 +861,25 @@ def build_completed_entry(
         "log_path": log_relpath,
         "status_class": classification.get("status_class"),
         "issue_scope": classification.get("issue_scope"),
+        "trust_target_steps": int(classification.get("trust_target_steps", 0) or 0),
     }
-    for key in ("startup_seconds", "warmup_seconds", "training_seconds", "eval_seconds", "total_seconds"):
+    for key in (
+        "startup_seconds",
+        "warmup_seconds",
+        "training_seconds",
+        "eval_seconds",
+        "total_seconds",
+        "steps_per_second",
+        "max_step_dt_ms",
+        "last_step_dt_ms",
+    ):
         if classification.get(key) is not None:
             entry[key] = classification[key]
     if classification.get("num_steps") is not None:
         entry["num_steps"] = int(classification["num_steps"])
+    for key in ("completion_phase", "completion_error_phase", "completion_error_type", "completion_error_message", "runner_abort_reason"):
+        if classification.get(key) is not None:
+            entry[key] = classification[key]
     return entry
 
 
@@ -870,6 +902,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         persist_state(state, state_path, report_path)
 
         git_reset_hard(reset_target_commit(state))
+        applied_assignments = effective_assignments(state, item)
         current_descriptions: set[str] = set()
         if state["session_kind"] == "exploration":
             current_descriptions = parse_results_descriptions(RESULTS_PATH)
@@ -881,15 +914,18 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         log_path = log_dir / f"{item['id']}.log"
         log_relpath = str(log_path.relative_to(ROOT))
         base_repeat = state["session_kind"] == "repeatability" and not item["assignments"]
-        if base_repeat:
-            commit = current_head()
-        else:
+        mutated_train = False
+        if applied_assignments:
             before = TRAIN_PATH.read_text()
-            changed = rewrite_train_constants(item["assignments"])
+            changed = rewrite_train_constants(applied_assignments)
             if not changed or TRAIN_PATH.read_text() == before:
                 runtime_skip(state, item, "assignments already match current frontier", state_path)
                 continue
-            commit = commit_experiment(item, log_relpath)
+            mutated_train = True
+        if base_repeat:
+            commit = current_head()
+        else:
+            commit = commit_experiment(item, applied_assignments, log_relpath)
 
         train_constants = parse_python_constants(TRAIN_PATH)
         valid, invalid_reason = validate_runtime_divisibility(train_constants, prepare_constants)
@@ -900,6 +936,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
                 "issue_scope": "experiment-specific",
                 "reason": invalid_reason,
                 "status_class": "config-invalid",
+                "trust_target_steps": int(state.get("trust_target_steps") or 0),
                 "val_bpb": None,
             }
             append_session_result(
@@ -910,7 +947,8 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(build_completed_entry(item, commit, "crash", classification, None))
-            git_reset_hard(reset_target_commit(state))
+            if mutated_train:
+                git_reset_hard(reset_target_commit(state))
             state["queue_index"] += 1
             state["active_experiment_id"] = None
             persist_state(state, state_path, report_path)
@@ -930,6 +968,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             classification = classify_log(log_text, state)
             if classification["status_class"] == "unknown-crash" and run_error:
                 classification["reason"] = run_error
+            classification["trust_target_steps"] = int(state.get("trust_target_steps") or 0)
             append_session_result(
                 state["tag"],
                 state["session_kind"],
@@ -938,7 +977,8 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(build_completed_entry(item, commit, "crash", classification, log_relpath))
-            git_reset_hard(reset_target_commit(state))
+            if mutated_train or state["session_kind"] == "exploration" or not base_repeat:
+                git_reset_hard(reset_target_commit(state))
             state["queue_index"] += 1
             state["active_experiment_id"] = None
             persist_state(state, state_path, report_path)
@@ -950,6 +990,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             append_results_row(commit, "0.000000", "0.0", "crash", item["description"])
             classification = classify_log(log_text, state)
             classification["reason"] = str(exc)
+            classification["trust_target_steps"] = int(state.get("trust_target_steps") or 0)
             append_session_result(
                 state["tag"],
                 state["session_kind"],
@@ -958,7 +999,8 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
             state["attempted"] += 1
             state["crash_count"] += 1
             state["completed"].append(build_completed_entry(item, commit, "crash", classification, log_relpath))
-            git_reset_hard(reset_target_commit(state))
+            if mutated_train or state["session_kind"] == "exploration" or not base_repeat:
+                git_reset_hard(reset_target_commit(state))
             state["queue_index"] += 1
             state["active_experiment_id"] = None
             persist_state(state, state_path, report_path)
@@ -970,6 +1012,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
         classification = classify_log(log_text, state)
         classification["memory_gb"] = round(memory_gb, 1)
         classification["val_bpb"] = round(val_bpb, 6)
+        classification["trust_target_steps"] = int(state.get("trust_target_steps") or 0)
         append_session_result(
             state["tag"],
             state["session_kind"],
@@ -984,7 +1027,7 @@ def run_loop(args: argparse.Namespace, state: dict[str, Any], state_path: Path, 
                 state["execution_base_commit"] = commit
         else:
             state["discard_count"] += 1
-        if state["session_kind"] == "exploration" or not base_repeat:
+        if mutated_train or state["session_kind"] == "exploration" or not base_repeat:
             git_reset_hard(reset_target_commit(state))
         state["completed"].append(build_completed_entry(item, commit, status, classification, log_relpath))
         state["queue_index"] += 1
@@ -1009,6 +1052,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stall-abort-ms", type=int)
     parser.add_argument("--stall-abort-step-max", type=int)
     parser.add_argument("--stall-abort-count", type=int)
+    parser.add_argument("--trust-target-steps", type=int)
     return parser.parse_args()
 
 

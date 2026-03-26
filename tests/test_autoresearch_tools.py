@@ -17,7 +17,7 @@ from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import reset_target_commit, terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
-from session_orchestrator import next_stage_from_summary, plan_preflight_blockers  # noqa: E402
+from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
     frontier_isolation_decision,
@@ -288,8 +288,8 @@ class AutoresearchToolTests(unittest.TestCase):
             {"id": "frontier_repeat_soak_f", "val_bpb": 1.3867, "status_class": "post-train-overrun", "num_steps": 353},
         ]
         action = frontier_soak_decision(context, items)
-        self.assertIn("repeatability earned", action)
-        self.assertIn("mar10_repeatability_dedicated_session.jsonl", action)
+        self.assertIn("comparability recovery", action)
+        self.assertIn("run_mar10_frontier_fixed_step_same_session.sh", action)
 
     def test_orchestrator_preflight_blocks_missing_execution_root(self) -> None:
         plan = {
@@ -346,6 +346,26 @@ class AutoresearchToolTests(unittest.TestCase):
         next_stage, reason = next_stage_from_summary(summary, stage)
         self.assertIsNone(next_stage)
         self.assertEqual(reason, "environment recovered; defer search to a later run window")
+
+    def test_build_stage_command_includes_trust_target_steps(self) -> None:
+        plan = {
+            "best_commit": "5b486fb",
+            "best_val": 1.386688,
+            "execution_root": "/private/tmp/autoresearch-execution-baseline",
+        }
+        stage = {
+            "id": "frontier_fixed_step_same_session",
+            "kind": "repeatability",
+            "queue": str(CONTROL_ROOT / "queues" / "mar10_frontier_fixed_step_same_session.jsonl"),
+            "timeout_seconds": 750,
+            "stall_abort_ms": 30000,
+            "stall_abort_step_max": 20,
+            "stall_abort_count": 3,
+            "trust_target_steps": 354,
+        }
+        command = build_stage_command(stage, plan, resume=False)
+        self.assertIn("--trust-target-steps", command)
+        self.assertIn("354", command)
 
 
 if __name__ == "__main__":
