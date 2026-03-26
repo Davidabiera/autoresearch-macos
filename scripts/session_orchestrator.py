@@ -313,6 +313,7 @@ def stage_result(active_run: dict[str, Any], stage: dict[str, Any], plan: dict[s
         summary["evaluation"] = evaluation
         summary["passed"] = bool(evaluation["passed"])
         summary["reason"] = evaluation["reason"]
+        summary["failure_class"] = evaluation.get("failure_class")
         summary["recommended_search_stage"] = evaluation.get("next_stage")
         summary["search_eligible"] = bool(evaluation["passed"])
         return summary
@@ -321,12 +322,14 @@ def stage_result(active_run: dict[str, Any], stage: dict[str, Any], plan: dict[s
         summary["evaluation"] = evaluation
         summary["passed"] = bool(evaluation["passed"])
         summary["reason"] = evaluation["reason"]
+        summary["failure_class"] = evaluation.get("failure_class")
         summary["search_eligible"] = False
         return summary
 
     failure = operational_failure_reason(completed)
     summary["passed"] = failure is None
     summary["reason"] = failure or "stage completed cleanly"
+    summary["failure_class"] = None if failure is None else "operational-failure"
     summary["search_eligible"] = False
     return summary
 
@@ -394,6 +397,7 @@ def write_runtime_forensics_bundle(
     evaluation = dict(summary.get("evaluation") or {})
     final_summary = {
         "verdict": "pass" if summary.get("passed") else "fail",
+        "failure_class": summary.get("failure_class"),
         "stop_reason": summary.get("reason"),
         "stage_id": stage["id"],
         "anchor_commit": plan["best_commit"],
@@ -415,6 +419,7 @@ def write_runtime_forensics_bundle(
         "## Verdict",
         "",
         f"- verdict: `{final_summary['verdict']}`",
+        f"- failure class: `{summary.get('failure_class')}`",
         f"- stop reason: `{summary.get('reason')}`",
         f"- anchor: `{plan['best_commit']}` / `{anchor_val:.6f}`",
         f"- bundle: `{bundle_root}`",

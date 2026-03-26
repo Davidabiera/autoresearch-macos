@@ -47,6 +47,18 @@ SUMMARY_PATTERNS = {
     "total_seconds": re.compile(r"^total_seconds:\s+([0-9.]+)$", re.MULTILINE),
     "num_steps": re.compile(r"^num_steps:\s+([0-9]+)$", re.MULTILINE),
 }
+COMPLETION_MARKER_RE = re.compile(
+    r"^completion_marker:\s+phase=([a-z_]+)(?:\s+num_steps=([0-9]+))?(?:\s+training_seconds=([0-9.]+))?(?:\s+total_seconds=([0-9.]+))?$",
+    re.MULTILINE,
+)
+COMPLETION_RESULT_RE = re.compile(
+    r"^completion_result:\s+completion_phase=([a-z_]+)\s+num_steps=([0-9]+)\s+training_seconds=([0-9.]+)(?:\s+total_seconds=([0-9.]+))?$",
+    re.MULTILINE,
+)
+COMPLETION_ERROR_RE = re.compile(
+    r"^completion_error:\s+phase=([a-z_]+)\s+exception=([A-Za-z0-9_.]+):\s*(.*)$",
+    re.MULTILINE,
+)
 RESULT_FLOAT_FIELDS = (
     "val_bpb",
     "memory_gb",
@@ -97,6 +109,7 @@ CONFIG_MARKERS = (
     "must be divisible",
 )
 STALL_FAILURE_CLASSES = {"startup-hang", "early-step-stall", "late-timeout", "watchdog-timeout", "runner-abort"}
+COMPLETION_FAILURE_CLASSES = {"post-train-summary-missing", "post-train-eval-crash"}
 REPEATABILITY_SPREAD_THRESHOLD = 0.0010
 MATERIAL_WIN_THRESHOLD = 0.0010
 FRONTIER_ANCHOR_DRIFT_THRESHOLD = 0.0010
@@ -544,6 +557,47 @@ def parse_step_progress(text: str) -> list[dict[str, int]]:
     return progress
 
 
+def parse_completion_markers(text: str) -> list[dict[str, Any]]:
+    markers: list[dict[str, Any]] = []
+    for phase, num_steps, training_seconds, total_seconds in COMPLETION_MARKER_RE.findall(text):
+        payload: dict[str, Any] = {"phase": phase}
+        if num_steps:
+            payload["num_steps"] = int(num_steps)
+        if training_seconds:
+            payload["training_seconds"] = float(training_seconds)
+        if total_seconds:
+            payload["total_seconds"] = float(total_seconds)
+        markers.append(payload)
+    return markers
+
+
+def parse_completion_result(text: str) -> dict[str, Any] | None:
+    match = COMPLETION_RESULT_RE.search(text)
+    if not match:
+        return None
+    phase, num_steps, training_seconds, total_seconds = match.groups()
+    payload: dict[str, Any] = {
+        "phase": phase,
+        "num_steps": int(num_steps),
+        "training_seconds": float(training_seconds),
+    }
+    if total_seconds:
+        payload["total_seconds"] = float(total_seconds)
+    return payload
+
+
+def parse_completion_error(text: str) -> dict[str, Any] | None:
+    match = COMPLETION_ERROR_RE.search(text)
+    if not match:
+        return None
+    phase, exc_type, message = match.groups()
+    return {
+        "phase": phase,
+        "exception_type": exc_type,
+        "message": message.strip(),
+    }
+
+
 def process_alive(pid: int | None) -> bool:
     if pid is None or pid <= 0:
         return False
@@ -633,13 +687,37 @@ def classify_log(
 ) -> dict[str, Any]:
     metrics = parse_log_metrics(text)
     step_progress = parse_step_progress(text)
+    completion_markers = parse_completion_markers(text)
+    completion_result = parse_completion_result(text)
+    completion_error = parse_completion_error(text)
     timeout_match = RUNNER_TIMEOUT_RE.search(text)
     abort_match = RUNNER_ABORT_RE.search(text)
+    if completion_result is not None:
+        if metrics["num_steps"] is None:
+            metrics["num_steps"] = float(completion_result["num_steps"])
+        if metrics["training_seconds"] is None:
+            metrics["training_seconds"] = float(completion_result["training_seconds"])
+        if metrics["total_seconds"] is None and completion_result.get("total_seconds") is not None:
+            metrics["total_seconds"] = float(completion_result["total_seconds"])
     informative = metrics["val_bpb"] is not None
     status_class = "unknown-crash"
     issue_scope = "unknown"
     suggested_action = "retry"
     reason = "log did not match any known completion or failure pattern"
+    last_completion_phase = None
+    if completion_result is not None:
+        last_completion_phase = str(completion_result["phase"])
+    elif completion_markers:
+        last_completion_phase = str(completion_markers[-1]["phase"])
+    elif completion_error is not None:
+        last_completion_phase = str(completion_error["phase"])
+    last_step = step_progress[-1]["step"] if step_progress else None
+    last_remaining_seconds = step_progress[-1]["remaining_seconds"] if step_progress else None
+    near_full_training = (
+        last_step is not None
+        and last_step + 1 >= MIN_CLEAN_NUM_STEPS
+        and (last_remaining_seconds is None or last_remaining_seconds <= 1)
+    )
 
     if informative:
         startup_seconds = metrics["startup_seconds"]
@@ -740,6 +818,34 @@ def classify_log(
             issue_scope = "experiment-specific"
             suggested_action = "discard"
             reason = "log includes an assertion or invalid configuration marker"
+        elif completion_error is not None:
+            issue_scope = "runtime-specific"
+            suggested_action = "backend-investigation"
+            if completion_error["phase"] in {"pre_eval", "post_eval"}:
+                status_class = "post-train-eval-crash"
+                reason = (
+                    f"run failed during completion phase `{completion_error['phase']}` "
+                    f"with {completion_error['exception_type']}: {completion_error['message']}"
+                )
+            else:
+                status_class = "post-train-summary-missing"
+                reason = (
+                    f"run failed after training during completion phase `{completion_error['phase']}` "
+                    f"with {completion_error['exception_type']}: {completion_error['message']}"
+                )
+        elif completion_markers or completion_result is not None or near_full_training:
+            status_class = "post-train-summary-missing"
+            issue_scope = "runtime-specific"
+            suggested_action = "backend-investigation"
+            if last_completion_phase is not None:
+                reason = f"run reached completion phase `{last_completion_phase}` but never emitted valid summary fields"
+            elif last_step is not None:
+                reason = (
+                    f"training reached step {last_step} without timeout or stall, "
+                    "but no eval/summary fields were emitted"
+                )
+            else:
+                reason = "run entered the completion path but never emitted valid summary fields"
         elif "traceback" in lowered or "exception" in lowered:
             status_class = "unknown-crash"
             issue_scope = "unknown"
@@ -763,8 +869,9 @@ def classify_log(
             payload[key] = metrics[key]
     if step_progress:
         payload["step_count"] = len(step_progress)
+        inferred_num_steps = max(len(step_progress), step_progress[-1]["step"] + 1)
         if payload.get("num_steps") is None:
-            payload["num_steps"] = len(step_progress)
+            payload["num_steps"] = inferred_num_steps
         payload["last_step"] = step_progress[-1]["step"]
         payload["last_step_dt_ms"] = step_progress[-1]["dt_ms"]
         payload["last_remaining_seconds"] = step_progress[-1]["remaining_seconds"]
@@ -776,6 +883,12 @@ def classify_log(
         payload["runner_timeout_seconds"] = int(timeout_match.group(1))
     if abort_match:
         payload["runner_abort_reason"] = abort_match.group(1)
+    if last_completion_phase is not None:
+        payload["completion_phase"] = last_completion_phase
+    if completion_error is not None:
+        payload["completion_error_phase"] = completion_error["phase"]
+        payload["completion_error_type"] = completion_error["exception_type"]
+        payload["completion_error_message"] = completion_error["message"]
     return payload
 
 
@@ -1107,17 +1220,28 @@ def count_non_informative(control_state: dict[str, Any] | None) -> dict[str, int
     }
 
 
-def repeatability_failure_reason(items: list[dict[str, Any]]) -> str | None:
+def repeatability_failure_detail(items: list[dict[str, Any]]) -> dict[str, str] | None:
     for item in items:
         status_class = str(item.get("status_class") or "")
         if status_class in STALL_FAILURE_CLASSES:
-            return f"repeatability session recorded `{status_class}` on `{item.get('id')}`"
+            return {
+                "failure_class": status_class,
+                "reason": f"repeatability session recorded `{status_class}` on `{item.get('id')}`",
+            }
+        if status_class in COMPLETION_FAILURE_CLASSES:
+            return {
+                "failure_class": status_class,
+                "reason": f"repeatability session recorded `{status_class}` on `{item.get('id')}`",
+            }
         num_steps = item.get("num_steps")
         if num_steps is not None and int(num_steps) < MIN_CLEAN_NUM_STEPS:
-            return (
-                f"repeatability session produced a truncated run on `{item.get('id')}` "
-                f"with only {int(num_steps)} steps"
-            )
+            return {
+                "failure_class": "truncated-run",
+                "reason": (
+                    f"repeatability session produced a truncated run on `{item.get('id')}` "
+                    f"with only {int(num_steps)} steps"
+                ),
+            }
     return None
 
 
@@ -1125,7 +1249,7 @@ def evaluate_repeatability_gate(
     items: list[dict[str, Any]],
     frontier_anchor_val: float | None = None,
 ) -> dict[str, Any]:
-    failure = repeatability_failure_reason(items)
+    failure = repeatability_failure_detail(items)
     frontier_repeats = [item for item in items if str(item.get("id") or "").startswith("frontier_repeat")]
     weight_decay_repeats = [item for item in items if str(item.get("id") or "").startswith("weight_decay_repeat_022")]
     frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
@@ -1142,7 +1266,8 @@ def evaluate_repeatability_gate(
 
     result: dict[str, Any] = {
         "passed": False,
-        "failure_reason": failure,
+        "failure_reason": failure["reason"] if failure else None,
+        "failure_class": failure["failure_class"] if failure else None,
         "frontier_count": len(frontier_vals),
         "weight_decay_count": len(weight_decay_vals),
         "frontier_mean": frontier_mean,
@@ -1155,15 +1280,18 @@ def evaluate_repeatability_gate(
         "next_stage": None,
     }
     if failure:
-        result["reason"] = failure
+        result["reason"] = failure["reason"]
         return result
     if frontier_spread is not None and frontier_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        result["failure_class"] = "quality-drift"
         result["reason"] = f"frontier repeatability spread is {frontier_spread:.6f}"
         return result
     if len(frontier_vals) < 2 or len(weight_decay_vals) < 2:
+        result["failure_class"] = "insufficient-clean-repeats"
         result["reason"] = "repeatability session does not yet have enough completed results"
         return result
     if frontier_anchor_delta is not None and frontier_anchor_delta > FRONTIER_ANCHOR_DRIFT_THRESHOLD:
+        result["failure_class"] = "quality-drift"
         result["reason"] = (
             f"frontier repeat mean is {frontier_mean:.6f}, which is {frontier_anchor_delta:.6f} "
             f"worse than the canonical anchor {frontier_anchor_val:.6f}"
@@ -1185,7 +1313,7 @@ def evaluate_frontier_isolation_gate(
     items: list[dict[str, Any]],
     frontier_anchor_val: float | None = None,
 ) -> dict[str, Any]:
-    failure = repeatability_failure_reason(items)
+    failure = repeatability_failure_detail(items)
     frontier_repeats = [item for item in items if str(item.get("id") or "").startswith("frontier_repeat")]
     frontier_vals = [float(item["val_bpb"]) for item in frontier_repeats if item.get("val_bpb") is not None]
     frontier_mean = sum(frontier_vals) / len(frontier_vals) if frontier_vals else None
@@ -1197,7 +1325,8 @@ def evaluate_frontier_isolation_gate(
     )
     result: dict[str, Any] = {
         "passed": False,
-        "failure_reason": failure,
+        "failure_reason": failure["reason"] if failure else None,
+        "failure_class": failure["failure_class"] if failure else None,
         "frontier_count": len(frontier_vals),
         "frontier_mean": frontier_mean,
         "frontier_spread": frontier_spread,
@@ -1206,15 +1335,18 @@ def evaluate_frontier_isolation_gate(
         "reason": None,
     }
     if failure:
-        result["reason"] = failure
+        result["reason"] = failure["reason"]
         return result
     if len(frontier_vals) < 2:
+        result["failure_class"] = "insufficient-clean-repeats"
         result["reason"] = "frontier isolation session does not yet have two completed baseline repeats"
         return result
     if frontier_spread is not None and frontier_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        result["failure_class"] = "quality-drift"
         result["reason"] = f"frontier isolation spread is {frontier_spread:.6f}"
         return result
     if frontier_anchor_delta is not None and frontier_anchor_delta > FRONTIER_ANCHOR_DRIFT_THRESHOLD:
+        result["failure_class"] = "quality-drift"
         result["reason"] = (
             f"frontier isolation mean is {frontier_mean:.6f}, which is {frontier_anchor_delta:.6f} "
             f"worse than the canonical anchor {frontier_anchor_val:.6f}"

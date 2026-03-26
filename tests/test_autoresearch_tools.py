@@ -103,6 +103,63 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(payload["status_class"], "early-step-stall")
         self.assertIn("runner aborted", payload["reason"])
 
+    def test_full_length_log_without_summary_classifies_as_post_train_summary_missing(self) -> None:
+        payload = classify_log(
+            "\n".join(
+                [
+                    "step 00342 (100.0%) | loss: 3.77 | lrm: 0.10 | dt: 906ms | tok/sec: 36244 | mfu: 0.0% | epoch: 1 | remaining: 0s",
+                    "step 00343 (100.0%) | loss: 3.76 | lrm: 0.10 | dt: 911ms | tok/sec: 36045 | mfu: 0.0% | epoch: 1 | remaining: 0s",
+                    "step 00344 (100.0%) | loss: 3.75 | lrm: 0.10 | dt: 899ms | tok/sec: 36526 | mfu: 0.0% | epoch: 1 | remaining: 0s",
+                ]
+            )
+        )
+        self.assertEqual(payload["status_class"], "post-train-summary-missing")
+        self.assertEqual(payload["num_steps"], 345)
+
+    def test_post_train_eval_exception_is_classified_explicitly(self) -> None:
+        payload = classify_log(
+            "\n".join(
+                [
+                    "completion_marker: phase=post_train_newline num_steps=345 training_seconds=300.0",
+                    "completion_marker: phase=pre_eval num_steps=345 training_seconds=300.0",
+                    "completion_error: phase=pre_eval exception=RuntimeError: MPS graph capture failed",
+                    "Traceback (most recent call last):",
+                    "  File \"train.py\", line 700, in <module>",
+                    "    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)",
+                    "RuntimeError: MPS graph capture failed",
+                    "completion_result: completion_phase=pre_eval num_steps=345 training_seconds=300.0 total_seconds=302.1",
+                ]
+            )
+        )
+        self.assertEqual(payload["status_class"], "post-train-eval-crash")
+        self.assertEqual(payload["completion_error_phase"], "pre_eval")
+        self.assertEqual(payload["num_steps"], 345)
+
+    def test_completion_markers_do_not_break_valid_summary_classification(self) -> None:
+        payload = classify_log(
+            "\n".join(
+                [
+                    "completion_marker: phase=post_train_newline num_steps=354 training_seconds=300.6",
+                    "completion_marker: phase=pre_eval num_steps=354 training_seconds=300.6",
+                    "completion_marker: phase=post_eval num_steps=354 training_seconds=300.6 total_seconds=472.2",
+                    "completion_marker: phase=pre_summary num_steps=354 training_seconds=300.6 total_seconds=472.2",
+                    "---",
+                    "val_bpb:          1.386662",
+                    "startup_seconds:  12.3",
+                    "warmup_seconds:   8.7",
+                    "training_seconds: 300.6",
+                    "eval_seconds:     150.6",
+                    "total_seconds:    472.2",
+                    "peak_vram_mb:     0.0",
+                    "num_steps:        354",
+                    "completion_marker: phase=post_summary num_steps=354 training_seconds=300.6 total_seconds=472.2",
+                    "completion_result: completion_phase=post_summary num_steps=354 training_seconds=300.6 total_seconds=472.2",
+                ]
+            )
+        )
+        self.assertEqual(payload["status_class"], "post-train-overrun")
+        self.assertAlmostEqual(payload["val_bpb"], 1.386662, places=6)
+
     def test_optimizer_micro_band_is_exhausted_after_gated_suppression(self) -> None:
         queue = build_queue(WORKSPACE_ROOT, "autoresearch/mar10", "optimizer-micro", 6, CONTROL_ROOT)
         self.assertEqual(queue, [])
@@ -184,7 +241,17 @@ class AutoresearchToolTests(unittest.TestCase):
         ]
         evaluation = evaluate_frontier_isolation_gate(items, frontier_anchor_val=1.386688)
         self.assertFalse(evaluation["passed"])
+        self.assertEqual(evaluation["failure_class"], "quality-drift")
         self.assertIn("worse than the canonical anchor", evaluation["reason"])
+
+    def test_frontier_isolation_gate_rejects_post_train_summary_missing(self) -> None:
+        items = [
+            {"id": "frontier_repeat_isolation_a", "status": "crash", "status_class": "post-train-summary-missing", "num_steps": 345},
+            {"id": "frontier_repeat_isolation_b", "status": "keep", "status_class": "post-train-overrun", "val_bpb": 1.386662, "num_steps": 354},
+        ]
+        evaluation = evaluate_frontier_isolation_gate(items, frontier_anchor_val=1.386688)
+        self.assertFalse(evaluation["passed"])
+        self.assertEqual(evaluation["failure_class"], "post-train-summary-missing")
 
     def test_frontier_isolation_decision_requires_environment_forensics_on_drift(self) -> None:
         context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.386688}

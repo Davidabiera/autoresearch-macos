@@ -513,6 +513,12 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         "## Active Run",
         "",
     ]
+    latest_backend = environment.get("latest_backend_isolation")
+    latest_repeat = environment.get("latest_repeatability_stage")
+    if latest_backend:
+        lines.insert(12, f"- latest backend-isolation failure class: `{latest_backend.get('failure_class')}`")
+    if latest_repeat:
+        lines.insert(13 if latest_backend else 12, f"- latest repeatability failure class: `{latest_repeat.get('failure_class')}`")
     if not active_run:
         lines.append("- none")
     else:
