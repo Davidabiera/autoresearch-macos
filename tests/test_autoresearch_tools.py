@@ -12,12 +12,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 WORKSPACE_ROOT = Path("/Users/davidabiera/Projects/team/autoresearch-macos")
 CONTROL_ROOT = WORKSPACE_ROOT / "worktrees" / "control" / "control"
 
-from autoresearch_lib import classify_log, evaluate_frontier_isolation_gate, evaluate_repeatability_gate  # noqa: E402
+from autoresearch_lib import classify_log, default_plan_path, evaluate_frontier_isolation_gate, evaluate_repeatability_gate  # noqa: E402
 from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
-from session_orchestrator import plan_preflight_blockers  # noqa: E402
+from session_orchestrator import next_stage_from_summary, plan_preflight_blockers  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
     frontier_isolation_decision,
@@ -128,7 +128,12 @@ class AutoresearchToolTests(unittest.TestCase):
     def test_session_status_exposes_frontier_and_next_action(self) -> None:
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
         self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
+        self.assertEqual(payload["environment"]["trust_state"], "untrusted")
         self.assertTrue(payload["recommended_next_action"])
+
+    def test_default_plan_prefers_backend_isolation_plan(self) -> None:
+        path = default_plan_path(CONTROL_ROOT, "mar10")
+        self.assertTrue(str(path).endswith("mar10_backend_isolation_then_repeatability.json"))
 
     def test_repeatability_branching_uses_material_win_threshold(self) -> None:
         context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.390250}
@@ -202,6 +207,32 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertTrue(blockers)
         self.assertEqual(warnings, [])
         self.assertIn("execution root does not exist", blockers[0])
+
+    def test_backend_isolation_success_branches_to_dedicated_repeatability(self) -> None:
+        summary = {"passed": True, "reason": "frontier isolation passed"}
+        stage = {
+            "id": "backend_isolation",
+            "success_rule": "frontier_isolation_gate",
+            "on_success": {"next_stage": "dedicated_repeatability"},
+        }
+        next_stage, reason = next_stage_from_summary(summary, stage)
+        self.assertEqual(next_stage, "dedicated_repeatability")
+        self.assertEqual(reason, "frontier isolation passed")
+
+    def test_dedicated_repeatability_success_stops_even_with_recommended_search_stage(self) -> None:
+        summary = {
+            "passed": True,
+            "reason": "environment is stable and weight decay does not materially win",
+            "recommended_search_stage": "scalar_first_canary",
+        }
+        stage = {
+            "id": "dedicated_repeatability",
+            "success_rule": "repeatability_gate",
+            "on_success": {"action": "stop", "reason": "environment recovered; defer search to a later run window"},
+        }
+        next_stage, reason = next_stage_from_summary(summary, stage)
+        self.assertIsNone(next_stage)
+        self.assertEqual(reason, "environment recovered; defer search to a later run window")
 
 
 if __name__ == "__main__":

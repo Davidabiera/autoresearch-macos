@@ -137,6 +137,7 @@ def artifact_paths(
 ) -> dict[str, Path | str]:
     resolved_control_root = (control_root or DEFAULT_CONTROL_ROOT).resolve()
     resolved_tag = tag or branch_tag(branch)
+    default_plan = default_plan_path(resolved_control_root, resolved_tag)
     return {
         "tag": resolved_tag,
         "results": target_root / "results.tsv",
@@ -154,7 +155,8 @@ def artifact_paths(
         "orchestrator_state": resolved_control_root / "state" / f"orchestrator_{resolved_tag}.json",
         "control_report": resolved_control_root / "reports" / f"overnight_{resolved_tag}.md",
         "control_queue": resolved_control_root / "queues" / f"{resolved_tag}_overnight.jsonl",
-        "default_plan": resolved_control_root / "plans" / f"{resolved_tag}_stability_then_next_axis.json",
+        "default_plan": default_plan,
+        "runtime_forensics_root": runtime_forensics_root(resolved_control_root, resolved_tag),
     }
 
 
@@ -177,7 +179,15 @@ def orchestrator_state_path(control_root: Path, tag: str) -> Path:
 
 
 def default_plan_path(control_root: Path, tag: str) -> Path:
-    return control_root / "plans" / f"{tag}_stability_then_next_axis.json"
+    plans_root = control_root / "plans"
+    preferred = plans_root / f"{tag}_backend_isolation_then_repeatability.json"
+    if preferred.exists():
+        return preferred
+    return plans_root / f"{tag}_stability_then_next_axis.json"
+
+
+def runtime_forensics_root(control_root: Path, tag: str) -> Path:
+    return control_root / "state" / "runtime_forensics"
 
 
 def run_git(target_root: Path, args: list[str]) -> str:

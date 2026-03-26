@@ -135,6 +135,110 @@ def current_repeatability_results(
     return repeatability_results
 
 
+def queue_matches(context: dict[str, Any], queue_path: str | None, suffix: str) -> bool:
+    if not queue_path:
+        return False
+    return str(queue_path).endswith(f"{context['tag']}_{suffix}.jsonl")
+
+
+def finished_active_stage_summary(
+    context: dict[str, Any],
+    active_run: dict[str, Any] | None,
+    active_state: dict[str, Any] | None,
+    repeatability_results: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not active_run or not bool(active_run.get("finished")):
+        return None
+    session_results = current_repeatability_results(active_run, active_state, repeatability_results)
+    stage_id = str(active_run.get("stage_id") or "")
+    queue_path = str(active_run.get("queue_path") or "")
+    if stage_id in {"backend_isolation", "frontier_isolation"} or queue_matches(context, queue_path, "frontier_isolation"):
+        evaluation = evaluate_frontier_isolation_gate(session_results, frontier_anchor_val=float(context["current_best_val"]))
+        return {
+            "stage_id": stage_id or "backend_isolation",
+            "role": "backend_isolation",
+            "passed": bool(evaluation["passed"]),
+            "reason": evaluation["reason"],
+            "evaluation": evaluation,
+            "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
+        }
+    if stage_id == "dedicated_repeatability" or queue_matches(context, queue_path, "repeatability_dedicated_session"):
+        evaluation = evaluate_repeatability_gate(session_results, frontier_anchor_val=float(context["current_best_val"]))
+        return {
+            "stage_id": stage_id or "dedicated_repeatability",
+            "role": "repeatability",
+            "passed": bool(evaluation["passed"]),
+            "reason": evaluation["reason"],
+            "evaluation": evaluation,
+            "recommended_search_stage": evaluation.get("next_stage"),
+            "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
+        }
+    return None
+
+
+def latest_completed_orchestrator_stage(orchestrator_state: dict[str, Any] | None, role: str) -> dict[str, Any] | None:
+    if not orchestrator_state:
+        return None
+    completed = list(orchestrator_state.get("completed_stages") or [])
+    for stage in reversed(completed):
+        stage_id = str(stage.get("stage_id") or "")
+        if role == "backend_isolation" and stage_id == "backend_isolation":
+            return stage
+        if role == "repeatability" and stage_id == "dedicated_repeatability":
+            return stage
+    return None
+
+
+def environment_status(
+    context: dict[str, Any],
+    active_run: dict[str, Any] | None,
+    active_state: dict[str, Any] | None,
+    repeatability_results: list[dict[str, Any]],
+    orchestrator_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    finished_active = finished_active_stage_summary(context, active_run, active_state, repeatability_results)
+    latest_backend = finished_active if finished_active and finished_active["role"] == "backend_isolation" else latest_completed_orchestrator_stage(orchestrator_state, "backend_isolation")
+    latest_repeat = finished_active if finished_active and finished_active["role"] == "repeatability" else latest_completed_orchestrator_stage(orchestrator_state, "repeatability")
+    state = "untrusted"
+    blocked_reason: str | None = None
+    next_stage: str | None = None
+    bundle_path = None
+    if latest_backend:
+        bundle_path = latest_backend.get("runtime_forensics_bundle")
+    if latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
+        state = "search eligible"
+        next_stage = str(latest_repeat.get("recommended_search_stage") or "day-2 canary")
+    elif latest_backend and latest_backend.get("passed"):
+        state = "conditionally recovered"
+        next_stage = "dedicated_repeatability"
+        blocked_reason = "dedicated repeatability rerun still required before search can reopen"
+    elif latest_backend:
+        state = "untrusted"
+        blocked_reason = str(latest_backend.get("reason"))
+    elif latest_repeat and not latest_repeat.get("passed"):
+        state = "untrusted"
+        blocked_reason = str(latest_repeat.get("reason"))
+    if active_run and not bool(active_run.get("finished")):
+        stage_id = str(active_run.get("stage_id") or "")
+        if stage_id == "dedicated_repeatability" and latest_backend and latest_backend.get("passed"):
+            state = "conditionally recovered"
+            next_stage = "dedicated_repeatability"
+            blocked_reason = "dedicated repeatability is in progress"
+        elif stage_id in {"backend_isolation", "frontier_isolation"}:
+            state = "untrusted"
+            next_stage = "backend_isolation"
+            blocked_reason = "backend isolation is in progress"
+            bundle_path = active_run.get("runtime_forensics_bundle")
+    return {
+        "trust_state": state,
+        "latest_backend_isolation": latest_backend,
+        "latest_repeatability_stage": latest_repeat,
+        "search_blocked_reason": blocked_reason,
+        "next_stage": next_stage,
+        "bundle_path": bundle_path,
+    }
+
+
 def repeatability_branching_decision(context: dict[str, Any], items: list[dict[str, Any]]) -> str:
     evaluation = evaluate_repeatability_gate(items, frontier_anchor_val=float(context["current_best_val"]))
     if not evaluation["passed"]:
@@ -234,6 +338,7 @@ def recommended_next_action(
     active_run_is_interrupted: bool,
     orchestrator_is_interrupted: bool,
     blockers: list[str],
+    environment: dict[str, Any],
 ) -> str:
     if blockers:
         return "do not launch autonomous stages until blockers are cleared: " + "; ".join(blockers)
@@ -241,6 +346,19 @@ def recommended_next_action(
         return "previous orchestrator session is interrupted; inspect its state and relaunch through the orchestrator"
     if active_run_is_interrupted:
         return "previous stage runner is interrupted; inspect its state and relaunch through the orchestrator"
+
+    latest_backend = environment.get("latest_backend_isolation")
+    latest_repeat = environment.get("latest_repeatability_stage")
+    if latest_repeat and latest_repeat.get("passed") and latest_backend and latest_backend.get("passed"):
+        recommended_stage = latest_repeat.get("recommended_search_stage") or environment.get("next_stage") or "day-2 canary"
+        return (
+            "environment recovered; stop tonight and schedule the next bounded canary on a later run window: "
+            f"`{recommended_stage}`"
+        )
+    if latest_backend and not latest_backend.get("passed") and not (active_run and not bool(active_run.get("finished"))):
+        return f"pause hyperparameter search and continue backend/environment investigation; {latest_backend.get('reason')}"
+    if latest_backend and latest_backend.get("passed") and not latest_repeat and not (active_run and not bool(active_run.get("finished"))):
+        return f"launch the dedicated repeatability rerun `{repeatability_queue_path(context)}`"
 
     signal = early_stop_signal(active_state, early_stop_floor, early_stop_after)
     if live_warning and active_run and not bool(active_run.get("finished")):
@@ -307,6 +425,7 @@ def build_payload(
     repeatability_results = parse_repeatability_results(Path(paths["repeatability_results"]))
     noncanonical_signals = parse_noncanonical_signals(Path(paths["noncanonical_signals"]))
     live_warning = live_stall_warning(active_state)
+    environment = environment_status(context, active_run, active_state, repeatability_results, orchestrator_state)
     exploration_recent = context["gated_results"][-5:]
     repeatability_recent = repeatability_results[-5:]
     noncanonical_recent = noncanonical_signals[-5:]
@@ -321,6 +440,7 @@ def build_payload(
         "default_plan": default_plan,
         "preflight_blockers": blockers,
         "live_stall_warning": live_warning,
+        "environment": environment,
         "last_exploration_results": exploration_recent,
         "last_repeatability_results": repeatability_recent,
         "last_noncanonical_signals": noncanonical_recent,
@@ -337,6 +457,7 @@ def build_payload(
             active_run_is_interrupted,
             orchestrator_is_interrupted,
             blockers,
+            environment,
         ),
     }
 
@@ -372,6 +493,7 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
     active_run = payload["active_run"]
     active_state = payload["active_state"]
     live_warning = payload["live_stall_warning"]
+    environment = payload["environment"]
     lines = [
         f"# Session Status: `{frontier['branch']}`",
         "",
@@ -380,6 +502,13 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         f"- best commit: `{frontier['current_best_commit']}`",
         f"- best `val_bpb`: `{frontier['current_best_val']:.6f}`",
         f"- execution ready: `{str(frontier['execution_ready']).lower()}`",
+        "",
+        "## Environment Trust",
+        "",
+        f"- trust state: `{environment['trust_state']}`",
+        f"- next stage: `{environment.get('next_stage')}`",
+        f"- search blocked reason: `{environment.get('search_blocked_reason')}`",
+        f"- latest backend-isolation bundle: `{environment.get('bundle_path')}`",
         "",
         "## Active Run",
         "",

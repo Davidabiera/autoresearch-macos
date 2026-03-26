@@ -134,6 +134,8 @@ def ensure_allowed_git_state() -> None:
         path = line[3:]
         if code == "??" and path in KNOWN_UNTRACKED:
             continue
+        if code == "??" and (path.startswith("HANDOFF_") or path.startswith("RUN_NOTES_") or path.startswith("BETA_REPORT_")):
+            continue
         if code == "??" and any(path.startswith(prefix) for prefix in RUNNER_OWNED_PREFIXES):
             continue
         if code == "??" and any(path.startswith(prefix) for prefix in RUNNER_SOURCE_PREFIXES):
@@ -302,6 +304,7 @@ def active_pointer_payload(state: dict[str, Any], state_path: Path, report_path:
         "plan_path": state.get("plan_path"),
         "stage_id": state.get("stage_id"),
         "launcher": state.get("launcher"),
+        "runtime_forensics_bundle": state.get("runtime_forensics_bundle"),
         "state_path": str(state_path),
         "report_path": str(report_path),
         "queue_path": state["queue_path"],
@@ -583,6 +586,7 @@ def init_state(args: argparse.Namespace, tag: str, state_path: Path, report_path
         "plan_path": os.environ.get("AUTORESEARCH_PLAN_PATH"),
         "stage_id": os.environ.get("AUTORESEARCH_STAGE_ID"),
         "launcher": os.environ.get("AUTORESEARCH_LAUNCHER"),
+        "runtime_forensics_bundle": os.environ.get("AUTORESEARCH_RUNTIME_FORENSICS_BUNDLE"),
         "queue_path": str(queue_path),
         "state_path": str(state_path),
         "report_path": str(report_path),
@@ -622,6 +626,7 @@ def load_or_init_state(args: argparse.Namespace) -> tuple[dict[str, Any], Path, 
         state.setdefault("plan_path", os.environ.get("AUTORESEARCH_PLAN_PATH"))
         state.setdefault("stage_id", os.environ.get("AUTORESEARCH_STAGE_ID"))
         state.setdefault("launcher", os.environ.get("AUTORESEARCH_LAUNCHER"))
+        state.setdefault("runtime_forensics_bundle", os.environ.get("AUTORESEARCH_RUNTIME_FORENSICS_BUNDLE"))
         state.setdefault("last_heartbeat_at", time.time())
         state.setdefault("ended_at", None)
         return state, state_path, report_path, log_dir
