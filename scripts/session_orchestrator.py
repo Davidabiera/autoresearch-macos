@@ -342,7 +342,6 @@ def write_runtime_forensics_bundle(
     state_path = Path(str(summary["state_path"])) if summary.get("state_path") else None
     state = read_json(state_path) if state_path and state_path.exists() else {}
     report_path = Path(str(summary["report_path"])) if summary.get("report_path") else None
-    log_dir = Path(str(state.get("log_dir"))) if state.get("log_dir") else None
     started_at = float(state.get("started_at") or summary.get("started_at") or time.time())
     ended_at = float(state.get("ended_at") or summary.get("ended_at") or time.time())
 
@@ -371,14 +370,13 @@ def write_runtime_forensics_bundle(
         shutil.copy2(state_path, bundle_root / state_path.name)
     if report_path and report_path.exists():
         shutil.copy2(report_path, bundle_root / report_path.name)
-    if log_dir and log_dir.exists():
-        target_log_root = bundle_root / "logs"
-        if target_log_root.exists():
-            shutil.rmtree(target_log_root)
-        shutil.copytree(log_dir, target_log_root)
 
     completed_items: list[dict[str, Any]] = []
     anchor_val = float(plan["best_val"])
+    target_log_root = bundle_root / "logs"
+    if target_log_root.exists():
+        shutil.rmtree(target_log_root)
+    target_log_root.mkdir(parents=True, exist_ok=True)
     for item in summary.get("completed", []):
         item_copy = dict(item)
         log_path_value = item.get("log_path")
@@ -386,6 +384,8 @@ def write_runtime_forensics_bundle(
             absolute_log = Path(str(active_run["execution_root"])) / str(log_path_value)
             item_copy["absolute_log_path"] = str(absolute_log)
             item_copy["max_dt_ms"] = max_dt_ms_from_log(absolute_log)
+            if absolute_log.exists():
+                shutil.copy2(absolute_log, target_log_root / absolute_log.name)
         val = item.get("val_bpb")
         if val is not None:
             item_copy["anchor_delta"] = round(float(val) - anchor_val, 6)
