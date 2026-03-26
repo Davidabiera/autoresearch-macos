@@ -196,7 +196,7 @@ def finished_active_stage_summary(
             "evaluation": evaluation,
             "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
         }
-    if stage_id == "dedicated_repeatability" or queue_matches(context, queue_path, "repeatability_dedicated_session"):
+    if stage_id in {"dedicated_repeatability", "dedicated_repeatability_fixed_step"} or queue_matches(context, queue_path, "repeatability_dedicated_session") or queue_matches(context, queue_path, "repeatability_fixed_step"):
         evaluation = evaluate_repeatability_gate(session_results, frontier_anchor_val=float(context["current_best_val"]))
         return {
             "stage_id": stage_id or "dedicated_repeatability",
@@ -219,7 +219,7 @@ def latest_completed_orchestrator_stage(orchestrator_state: dict[str, Any] | Non
         stage_id = str(stage.get("stage_id") or "")
         if role == "backend_isolation" and stage_id in {"backend_isolation", "frontier_soak", "frontier_fixed_step_same_session", "frontier_fixed_step_rebooted"}:
             return stage
-        if role == "repeatability" and stage_id == "dedicated_repeatability":
+        if role == "repeatability" and stage_id in {"dedicated_repeatability", "dedicated_repeatability_fixed_step"}:
             return stage
     return None
 
@@ -268,10 +268,10 @@ def environment_status(
         blocked_reason = str(latest_repeat.get("reason"))
     if active_run and not bool(active_run.get("finished")):
         stage_id = str(active_run.get("stage_id") or "")
-        if stage_id == "dedicated_repeatability" and latest_backend and latest_backend.get("passed"):
+        if stage_id in {"dedicated_repeatability", "dedicated_repeatability_fixed_step"} and latest_backend and latest_backend.get("passed"):
             state = "conditionally recovered"
-            next_stage = "dedicated_repeatability"
-            blocked_reason = "dedicated repeatability is in progress"
+            next_stage = stage_id
+            blocked_reason = "fixed-step dedicated repeatability is in progress" if stage_id == "dedicated_repeatability_fixed_step" else "dedicated repeatability is in progress"
         elif stage_id in {"backend_isolation", "frontier_isolation", "frontier_soak", "frontier_fixed_step_same_session", "frontier_fixed_step_rebooted"}:
             state = "untrusted"
             next_stage = stage_id

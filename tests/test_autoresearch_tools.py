@@ -20,8 +20,10 @@ from reconcile_session import build_output  # noqa: E402
 from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
+    environment_status,
     frontier_isolation_decision,
     frontier_soak_decision,
+    latest_completed_orchestrator_stage,
     repeatability_branching_decision,
 )
 
@@ -366,6 +368,26 @@ class AutoresearchToolTests(unittest.TestCase):
         command = build_stage_command(stage, plan, resume=False)
         self.assertIn("--trust-target-steps", command)
         self.assertIn("354", command)
+
+    def test_latest_completed_orchestrator_stage_recognizes_fixed_step_repeatability(self) -> None:
+        orchestrator_state = {
+            "completed_stages": [
+                {"stage_id": "frontier_fixed_step_rebooted", "passed": True},
+                {"stage_id": "dedicated_repeatability_fixed_step", "passed": True, "recommended_search_stage": "scalar_first_canary"},
+            ]
+        }
+        stage = latest_completed_orchestrator_stage(orchestrator_state, "repeatability")
+        self.assertIsNotNone(stage)
+        self.assertEqual(stage["stage_id"], "dedicated_repeatability_fixed_step")
+
+    def test_environment_status_treats_fixed_step_repeatability_as_active_gate(self) -> None:
+        context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        active_run = {"finished": False, "stage_id": "dedicated_repeatability_fixed_step"}
+        orchestrator_state = {"completed_stages": [{"stage_id": "frontier_fixed_step_rebooted", "passed": True, "reason": "ok"}]}
+        env = environment_status(context, active_run, None, [], orchestrator_state)
+        self.assertEqual(env["trust_state"], "conditionally recovered")
+        self.assertEqual(env["next_stage"], "dedicated_repeatability_fixed_step")
+        self.assertEqual(env["search_blocked_reason"], "fixed-step dedicated repeatability is in progress")
 
 
 if __name__ == "__main__":
