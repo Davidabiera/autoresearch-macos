@@ -150,3 +150,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that a recovered runtime path can still leave the branch on a degraded throughput/metric surface, so calibration must gate on both timing and reproduced frontier quality
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260325-frontier-repeatability-partial-recovery-autoresearch-mar24-night]
+- Parent workflow: repeatability diagnosis after identifying a competing external training process
+- Trigger: third unchanged frontier rerun after stopping `/private/tmp/autoresearch-execution-baseline/train.py`
+- Inputs used: current train.py at the confirmed frontier, `ps`, `top`, `memory_pressure`, `vm_stat`, and archived frontier calibration logs
+- Output delivered: partial-cause finding that background load materially affects frontier throughput and quality
+- What worked: stopping the competing external trainer improved the unchanged frontier rerun from 329-334 steps and 1.394-1.397 val_bpb up to 342 steps and 1.390871 val_bpb
+- Friction: even after removing the external trainer, the run still did not recover the trusted 360-step / 1.382862 band; the active desktop remained under significant CPU and memory pressure from GUI applications and compressed memory
+- Uncertainty: medium uncertainty on how much additional recovery is possible without further machine cleanup; low uncertainty that active competing load is a real confounder
+- Reusable pattern: on an actively used desktop Mac, repeatability can improve substantially after removing competing training jobs, but lingering browser/app load may still keep the machine below the trusted frontier throughput band
+- Proposed dossier change: note that unattended or low-interference sessions are materially safer for frontier comparisons than active-desktop sessions with heavy browser/app load
+- Proposed AGENTS or skill change: none
+- Confidence: high
