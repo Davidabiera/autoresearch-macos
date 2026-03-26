@@ -12,6 +12,12 @@
     {
       "id": "backend_isolation",
       "kind": "repeatability",
+      "on_failure_by_class": {
+        "quality-drift": {
+          "next_stage": "frontier_soak",
+          "reason": "backend isolation completed cleanly but drifted; continue frontier-only soak measurement"
+        }
+      },
       "on_failure": {
         "action": "stop",
         "reason": "backend isolation failed; continue backend/environment investigation"
@@ -20,6 +26,26 @@
         "next_stage": "dedicated_repeatability"
       },
       "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_frontier_isolation.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "frontier_isolation_gate",
+      "timeout_seconds": 750
+    },
+    {
+      "id": "frontier_soak",
+      "kind": "repeatability",
+      "max_experiments": 6,
+      "on_failure": {
+        "action": "stop",
+        "reason": "frontier soak confirmed quality drift; search remains blocked"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "frontier soak passed; repeatability earned for the next controlled window"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_frontier_soak.jsonl",
+      "required_repeats": 6,
       "stall_abort_count": 3,
       "stall_abort_ms": 30000,
       "stall_abort_step_max": 20,
