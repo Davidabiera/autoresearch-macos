@@ -1,0 +1,50 @@
+{
+  "best_commit": "5b486fb",
+  "best_val": 1.386688,
+  "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
+  "execution_root": "/private/tmp/autoresearch-execution-baseline",
+  "max_stage_chain": {
+    "overnight": 2,
+    "tonight": 2
+  },
+  "plan_id": "mar10_backend_isolation_then_repeatability",
+  "stages": [
+    {
+      "id": "backend_isolation",
+      "kind": "repeatability",
+      "on_failure": {
+        "action": "stop",
+        "reason": "backend isolation failed; continue backend/environment investigation"
+      },
+      "on_success": {
+        "next_stage": "dedicated_repeatability"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_frontier_isolation.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "frontier_isolation_gate",
+      "timeout_seconds": 750
+    },
+    {
+      "id": "dedicated_repeatability",
+      "kind": "repeatability",
+      "on_failure": {
+        "action": "stop",
+        "reason": "dedicated repeatability rerun failed; keep search blocked"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "environment recovered; defer search to a later run window"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_repeatability_dedicated_session.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "repeatability_gate",
+      "timeout_seconds": 750
+    }
+  ],
+  "tag": "mar10",
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /private/tmp/autoresearch-execution-baseline/train.py"
+}
