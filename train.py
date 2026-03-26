@@ -500,6 +500,7 @@ FINAL_LR_FRAC = 0.05    # final LR as fraction of initial
 # Model size
 DEPTH = 4               # number of transformer layers
 DEVICE_BATCH_SIZE = 16  # per-device batch size (reduce if OOM)
+TRUST_TARGET_STEPS = 0  # fixed-step trust mode; 0 keeps the default wall-clock budget
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
@@ -576,10 +577,13 @@ if device_type == "cuda":
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
 
-print(f"Time budget: {TIME_BUDGET}s")
+if TRUST_TARGET_STEPS > 0:
+    print(f"Trust target steps: {TRUST_TARGET_STEPS}")
+else:
+    print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
 
-# Schedules (all based on progress = training_time / TIME_BUDGET)
+# Schedules (based on training_time / TIME_BUDGET, or step / TRUST_TARGET_STEPS in trust mode)
 
 def get_lr_multiplier(progress):
     if progress < WARMUP_RATIO:
@@ -596,6 +600,25 @@ def get_muon_momentum(step):
 
 def get_weight_decay(progress):
     return WEIGHT_DECAY * (1 - progress)
+
+
+def progress_value(step: int, total_training_time: float) -> float:
+    if TRUST_TARGET_STEPS > 0:
+        return min(step / TRUST_TARGET_STEPS, 1.0)
+    return min(total_training_time / TIME_BUDGET, 1.0)
+
+
+def estimated_remaining_seconds(step: int, total_training_time: float, dt: float) -> float:
+    if TRUST_TARGET_STEPS <= 0:
+        return max(0.0, TIME_BUDGET - total_training_time)
+    completed_steps = step + 1
+    remaining_steps = max(TRUST_TARGET_STEPS - completed_steps, 0)
+    measured_steps = max(completed_steps - 11, 0)
+    if measured_steps > 0 and total_training_time > 0:
+        avg_dt = total_training_time / measured_steps
+    else:
+        avg_dt = dt
+    return max(0.0, remaining_steps * avg_dt)
 
 # ---------------------------------------------------------------------------
 # Training loop
@@ -624,7 +647,7 @@ while True:
         x, y, epoch = next(train_loader)
 
     # Progress and schedules
-    progress = min(total_training_time / TIME_BUDGET, 1.0)
+    progress = progress_value(step, total_training_time)
     lrm = get_lr_multiplier(progress)
     muon_momentum = get_muon_momentum(step)
     muon_weight_decay = get_weight_decay(progress)
@@ -657,9 +680,24 @@ while True:
     pct_done = 100 * progress
     tok_per_sec = int(TOTAL_BATCH_SIZE / dt)
     mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / H100_BF16_PEAK_FLOPS
-    remaining = max(0, TIME_BUDGET - total_training_time)
-
-    print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
+    remaining = estimated_remaining_seconds(step, total_training_time, dt)
+    if TRUST_TARGET_STEPS > 0:
+        steps_left = max(TRUST_TARGET_STEPS - (step + 1), 0)
+        print(
+            f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | "
+            f"lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | "
+            f"epoch: {epoch} | remaining: {remaining:.0f}s | steps_left: {steps_left}    ",
+            end="",
+            flush=True,
+        )
+    else:
+        print(
+            f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | "
+            f"lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | "
+            f"epoch: {epoch} | remaining: {remaining:.0f}s    ",
+            end="",
+            flush=True,
+        )
 
     # GC management (Python's GC causes ~500ms stalls)
     if step == 0:
@@ -671,9 +709,13 @@ while True:
 
     step += 1
 
-    # Time's up — but only stop after warmup steps so we don't count compilation
-    if step > 10 and total_training_time >= TIME_BUDGET:
-        break
+    if TRUST_TARGET_STEPS > 0:
+        if step >= TRUST_TARGET_STEPS:
+            break
+    else:
+        # Time's up — but only stop after warmup steps so we don't count compilation
+        if step > 10 and total_training_time >= TIME_BUDGET:
+            break
 
 print()  # newline after \r training log
 
