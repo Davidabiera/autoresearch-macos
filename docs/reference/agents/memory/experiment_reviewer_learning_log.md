@@ -137,3 +137,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that large Adam-LR moves on the shared embedding/value-embedding group can trigger catastrophic MPS slow paths even without an explicit traceback
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260325-frontier-repeatability-check-autoresearch-mar24-night]
+- Parent workflow: post-crash calibration gate before resuming hyperparameter search
+- Trigger: two unchanged frontier reruns after the runtime recovered from the embedding-lr slow-path failure
+- Inputs used: current train.py at the confirmed frontier, run.log, archived frontier logs from commits 21af6c2, 76defde, and fb177dc
+- Output delivered: repeatability warning and a recommendation to pause new search verdicts
+- What worked: runtime recovered from the catastrophic slow path, with early step times back near the prior healthy regime
+- Friction: the unchanged frontier did not reproduce its earlier metric or throughput band; the two calibration reruns landed at val_bpb 1.397026 with 329 steps and 1.394373 with 334 steps, versus the trusted 76defde run at 1.382862 with 360 steps
+- Uncertainty: medium uncertainty on root cause; low uncertainty that the current measurement surface has shifted enough to make new search verdicts risky
+- Reusable pattern: when unchanged-frontier reruns recover from a runtime stall but remain materially worse in both num_steps and val_bpb, treat the system as a repeatability problem first and avoid logging new hyperparameter wins or losses until the frontier band is re-established
+- Proposed dossier change: note that a recovered runtime path can still leave the branch on a degraded throughput/metric surface, so calibration must gate on both timing and reproduced frontier quality
+- Proposed AGENTS or skill change: none
+- Confidence: high
