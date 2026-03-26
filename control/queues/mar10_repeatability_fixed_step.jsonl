@@ -1,0 +1,4 @@
+{"assignments": {}, "description": "repeat canonical frontier baseline fixed-step dedicated session a", "id": "frontier_repeat_fixed_step_dedicated_a"}
+{"assignments": {"WEIGHT_DECAY": "0.22"}, "description": "repeat weight decay 0.22 fixed-step dedicated session a", "id": "weight_decay_repeat_022_fixed_step_dedicated_a"}
+{"assignments": {}, "description": "repeat canonical frontier baseline fixed-step dedicated session b", "id": "frontier_repeat_fixed_step_dedicated_b"}
+{"assignments": {"WEIGHT_DECAY": "0.22"}, "description": "repeat weight decay 0.22 fixed-step dedicated session b", "id": "weight_decay_repeat_022_fixed_step_dedicated_b"}

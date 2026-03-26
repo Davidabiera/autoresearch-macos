@@ -1,0 +1,35 @@
+{
+  "best_commit": "5b486fb",
+  "best_val": 1.386688,
+  "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
+  "execution_root": "/private/tmp/autoresearch-execution-baseline",
+  "max_stage_chain": {
+    "overnight": 1,
+    "tonight": 1
+  },
+  "plan_id": "mar10_frontier_fixed_step_rebooted",
+  "stages": [
+    {
+      "id": "frontier_fixed_step_rebooted",
+      "kind": "repeatability",
+      "on_failure": {
+        "action": "stop",
+        "reason": "rebooted fixed-step isolation failed; keep search blocked and continue backend/MPS investigation"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "local fixed-step isolation block passed; fixed-step dedicated repeatability is earned for the next gate"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_frontier_fixed_step_rebooted.jsonl",
+      "required_repeats": 2,
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "frontier_isolation_gate",
+      "timeout_seconds": 750,
+      "trust_target_steps": 354
+    }
+  ],
+  "tag": "mar10",
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /private/tmp/autoresearch-execution-baseline/train.py"
+}
