@@ -209,7 +209,7 @@ def stage_result(active_run: dict[str, Any], stage: dict[str, Any]) -> dict[str,
         "stopped_reason": state.get("stopped_reason"),
     }
     if stage.get("success_rule") == "repeatability_gate":
-        evaluation = evaluate_repeatability_gate(completed)
+        evaluation = evaluate_repeatability_gate(completed, frontier_anchor_val=float(plan["best_val"]))
         summary["evaluation"] = evaluation
         summary["passed"] = bool(evaluation["passed"])
         summary["reason"] = evaluation["reason"]

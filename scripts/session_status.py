@@ -131,7 +131,7 @@ def current_repeatability_results(
 
 
 def repeatability_branching_decision(context: dict[str, Any], items: list[dict[str, Any]]) -> str:
-    evaluation = evaluate_repeatability_gate(items)
+    evaluation = evaluate_repeatability_gate(items, frontier_anchor_val=float(context["current_best_val"]))
     if not evaluation["passed"]:
         return f"pause hyperparameter search and open backend/environment investigation; {evaluation['reason']}"
     if evaluation["next_stage"] == "weight_decay_confirmation":

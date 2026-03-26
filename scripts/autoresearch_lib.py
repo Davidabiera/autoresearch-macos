@@ -99,6 +99,7 @@ CONFIG_MARKERS = (
 STALL_FAILURE_CLASSES = {"startup-hang", "early-step-stall", "late-timeout", "watchdog-timeout", "runner-abort"}
 REPEATABILITY_SPREAD_THRESHOLD = 0.0010
 MATERIAL_WIN_THRESHOLD = 0.0010
+FRONTIER_ANCHOR_DRIFT_THRESHOLD = 0.0010
 MIN_CLEAN_NUM_STEPS = 300
 RESEARCH_PROCESS_MARKERS = ("train.py", "overnight_runner.py", "session_orchestrator.py", "uv run train.py")
 
@@ -1110,7 +1111,10 @@ def repeatability_failure_reason(items: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def evaluate_repeatability_gate(items: list[dict[str, Any]]) -> dict[str, Any]:
+def evaluate_repeatability_gate(
+    items: list[dict[str, Any]],
+    frontier_anchor_val: float | None = None,
+) -> dict[str, Any]:
     failure = repeatability_failure_reason(items)
     frontier_repeats = [item for item in items if str(item.get("id") or "").startswith("frontier_repeat")]
     weight_decay_repeats = [item for item in items if str(item.get("id") or "").startswith("weight_decay_repeat_022")]
@@ -1120,6 +1124,11 @@ def evaluate_repeatability_gate(items: list[dict[str, Any]]) -> dict[str, Any]:
     weight_decay_mean = sum(weight_decay_vals) / len(weight_decay_vals) if weight_decay_vals else None
     frontier_spread = max(frontier_vals) - min(frontier_vals) if len(frontier_vals) >= 2 else None
     weight_decay_spread = max(weight_decay_vals) - min(weight_decay_vals) if len(weight_decay_vals) >= 2 else None
+    frontier_anchor_delta = (
+        frontier_mean - frontier_anchor_val
+        if frontier_mean is not None and frontier_anchor_val is not None
+        else None
+    )
 
     result: dict[str, Any] = {
         "passed": False,
@@ -1130,6 +1139,8 @@ def evaluate_repeatability_gate(items: list[dict[str, Any]]) -> dict[str, Any]:
         "weight_decay_mean": weight_decay_mean,
         "frontier_spread": frontier_spread,
         "weight_decay_spread": weight_decay_spread,
+        "frontier_anchor_val": frontier_anchor_val,
+        "frontier_anchor_delta": frontier_anchor_delta,
         "material_winner": None,
         "next_stage": None,
     }
@@ -1141,6 +1152,12 @@ def evaluate_repeatability_gate(items: list[dict[str, Any]]) -> dict[str, Any]:
         return result
     if len(frontier_vals) < 2 or len(weight_decay_vals) < 2:
         result["reason"] = "repeatability session does not yet have enough completed results"
+        return result
+    if frontier_anchor_delta is not None and frontier_anchor_delta > FRONTIER_ANCHOR_DRIFT_THRESHOLD:
+        result["reason"] = (
+            f"frontier repeat mean is {frontier_mean:.6f}, which is {frontier_anchor_delta:.6f} "
+            f"worse than the canonical anchor {frontier_anchor_val:.6f}"
+        )
         return result
 
     result["passed"] = True

@@ -130,7 +130,7 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertTrue(payload["recommended_next_action"])
 
     def test_repeatability_branching_uses_material_win_threshold(self) -> None:
-        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.390250}
         items = [
             {"id": "frontier_repeat_a", "val_bpb": 1.3900, "status_class": "post-train-overrun", "num_steps": 340},
             {"id": "frontier_repeat_b", "val_bpb": 1.3905, "status_class": "post-train-overrun", "num_steps": 339},
@@ -141,7 +141,7 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertIn("weight_decay_confirmation", action)
 
     def test_repeatability_branching_rejects_truncated_runs(self) -> None:
-        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        context = {"paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10", "current_best_val": 1.386688}
         items = [
             {"id": "frontier_repeat_a", "val_bpb": 2.244121, "status_class": "post-train-overrun", "num_steps": 14},
             {"id": "frontier_repeat_b", "val_bpb": 1.392134, "status_class": "post-train-overrun", "num_steps": 342},
@@ -156,9 +156,20 @@ class AutoresearchToolTests(unittest.TestCase):
             {"id": "weight_decay_repeat_022_a", "val_bpb": 1.3896, "status_class": "post-train-overrun", "num_steps": 341},
             {"id": "weight_decay_repeat_022_b", "val_bpb": 1.3897, "status_class": "post-train-overrun", "num_steps": 340},
         ]
-        evaluation = evaluate_repeatability_gate(items)
+        evaluation = evaluate_repeatability_gate(items, frontier_anchor_val=1.3902)
         self.assertTrue(evaluation["passed"])
         self.assertEqual(evaluation["next_stage"], "scalar_first_canary")
+
+    def test_repeatability_gate_rejects_anchor_drift(self) -> None:
+        items = [
+            {"id": "frontier_repeat_a", "val_bpb": 1.3950, "status_class": "post-train-overrun", "num_steps": 334},
+            {"id": "frontier_repeat_b", "val_bpb": 1.3954, "status_class": "post-train-overrun", "num_steps": 333},
+            {"id": "weight_decay_repeat_022_a", "val_bpb": 1.4069, "status_class": "post-train-overrun", "num_steps": 312},
+            {"id": "weight_decay_repeat_022_b", "val_bpb": 1.4071, "status_class": "post-train-overrun", "num_steps": 311},
+        ]
+        evaluation = evaluate_repeatability_gate(items, frontier_anchor_val=1.386688)
+        self.assertFalse(evaluation["passed"])
+        self.assertIn("worse than the canonical anchor", evaluation["reason"])
 
     def test_orchestrator_preflight_blocks_missing_execution_root(self) -> None:
         plan = {
