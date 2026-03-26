@@ -124,3 +124,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: none
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260325-170624_autoresearch-mar24-night_34c3929_c3527f9]
+- Parent workflow: overnight experiment loop after restoring the schedule frontier and switching to the largest untouched Adam group
+- Trigger: killed run with no final summary after raising EMBEDDING_LR from 0.6 to 0.63
+- Inputs used: program.md, README.md, current train.py, last commit c3527f9, run.log, results.tsv, prepare.py
+- Output delivered: crash verdict with one strict TSV row and one bounded next-step recommendation
+- What worked: the run failed quickly enough to rule out this larger embedding-lr move without wasting a full comparison slot
+- Friction: step time exploded immediately on the current macOS/MPS path, so there is no comparable val_bpb and the shell wrapper had to be killed manually
+- Uncertainty: low uncertainty that the run is unusable; medium uncertainty on whether the failure is specific to this step size or the embedding-lr direction more broadly
+- Reusable pattern: when a single hyperparameter change causes immediate order-of-magnitude step-time inflation and no summary block, log a crash and restore the prior frontier instead of treating it as a normal discard
+- Proposed dossier change: note that large Adam-LR moves on the shared embedding/value-embedding group can trigger catastrophic MPS slow paths even without an explicit traceback
+- Proposed AGENTS or skill change: none
+- Confidence: high
