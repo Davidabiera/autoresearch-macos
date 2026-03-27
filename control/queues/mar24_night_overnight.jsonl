@@ -1,0 +1,50 @@
+{"id":"frontier_repeat_overnight_a","description":"repeat current frontier overnight soak a","assignments":{}}
+{"id":"frontier_repeat_overnight_b","description":"repeat current frontier overnight soak b","assignments":{}}
+{"id":"frontier_repeat_overnight_c","description":"repeat current frontier overnight soak c","assignments":{}}
+{"id":"adam_betas_085_093","description":"change adam betas to (0.85, 0.93)","assignments":{"ADAM_BETAS":"(0.85, 0.93)"}}
+{"id":"adam_betas_085_094","description":"change adam betas to (0.85, 0.94)","assignments":{"ADAM_BETAS":"(0.85, 0.94)"}}
+{"id":"adam_betas_085_092","description":"change adam betas to (0.85, 0.92)","assignments":{"ADAM_BETAS":"(0.85, 0.92)"}}
+{"id":"adam_betas_085_091","description":"change adam betas to (0.85, 0.91)","assignments":{"ADAM_BETAS":"(0.85, 0.91)"}}
+{"id":"adam_betas_084_095","description":"change adam betas to (0.84, 0.95)","assignments":{"ADAM_BETAS":"(0.84, 0.95)"}}
+{"id":"adam_betas_083_095","description":"change adam betas to (0.83, 0.95)","assignments":{"ADAM_BETAS":"(0.83, 0.95)"}}
+{"id":"frontier_repeat_overnight_d","description":"repeat current frontier overnight soak d","assignments":{}}
+{"id":"unembedding_lr_00534375","description":"lower unembedding lr to 0.00534375","assignments":{"UNEMBEDDING_LR":"0.00534375"}}
+{"id":"unembedding_lr_0053125","description":"lower unembedding lr to 0.0053125","assignments":{"UNEMBEDDING_LR":"0.0053125"}}
+{"id":"unembedding_lr_00528125","description":"lower unembedding lr to 0.00528125","assignments":{"UNEMBEDDING_LR":"0.00528125"}}
+{"id":"unembedding_lr_00540625","description":"raise unembedding lr to 0.00540625","assignments":{"UNEMBEDDING_LR":"0.00540625"}}
+{"id":"unembedding_lr_0054375","description":"raise unembedding lr to 0.0054375","assignments":{"UNEMBEDDING_LR":"0.0054375"}}
+{"id":"unembedding_lr_00546875","description":"raise unembedding lr to 0.00546875","assignments":{"UNEMBEDDING_LR":"0.00546875"}}
+{"id":"frontier_repeat_overnight_e","description":"repeat current frontier overnight soak e","assignments":{}}
+{"id":"final_lr_frac_00475","description":"lower final lr frac to 0.0475","assignments":{"FINAL_LR_FRAC":"0.0475"}}
+{"id":"final_lr_frac_0045","description":"lower final lr frac to 0.045","assignments":{"FINAL_LR_FRAC":"0.045"}}
+{"id":"final_lr_frac_00425","description":"lower final lr frac to 0.0425","assignments":{"FINAL_LR_FRAC":"0.0425"}}
+{"id":"final_lr_frac_004","description":"lower final lr frac to 0.04","assignments":{"FINAL_LR_FRAC":"0.04"}}
+{"id":"warmdown_ratio_049","description":"shorten warmdown ratio to 0.49","assignments":{"WARMDOWN_RATIO":"0.49"}}
+{"id":"warmdown_ratio_048","description":"shorten warmdown ratio to 0.48","assignments":{"WARMDOWN_RATIO":"0.48"}}
+{"id":"warmdown_ratio_047","description":"shorten warmdown ratio to 0.47","assignments":{"WARMDOWN_RATIO":"0.47"}}
+{"id":"warmdown_ratio_046","description":"shorten warmdown ratio to 0.46","assignments":{"WARMDOWN_RATIO":"0.46"}}
+{"id":"frontier_repeat_overnight_f","description":"repeat current frontier overnight soak f","assignments":{}}
+{"id":"warmup_ratio_0005","description":"add warmup ratio of 0.0005","assignments":{"WARMUP_RATIO":"0.0005"}}
+{"id":"warmup_ratio_001","description":"add warmup ratio of 0.001","assignments":{"WARMUP_RATIO":"0.001"}}
+{"id":"warmup_ratio_0025","description":"add warmup ratio of 0.0025","assignments":{"WARMUP_RATIO":"0.0025"}}
+{"id":"warmup_ratio_005","description":"add warmup ratio of 0.005","assignments":{"WARMUP_RATIO":"0.005"}}
+{"id":"weight_decay_02025","description":"raise weight decay to 0.2025","assignments":{"WEIGHT_DECAY":"0.2025"}}
+{"id":"weight_decay_0205","description":"raise weight decay to 0.205","assignments":{"WEIGHT_DECAY":"0.205"}}
+{"id":"weight_decay_02075","description":"raise weight decay to 0.2075","assignments":{"WEIGHT_DECAY":"0.2075"}}
+{"id":"weight_decay_021","description":"raise weight decay to 0.21","assignments":{"WEIGHT_DECAY":"0.21"}}
+{"id":"frontier_repeat_overnight_g","description":"repeat current frontier overnight soak g","assignments":{}}
+{"id":"matrix_lr_00455","description":"lower matrix lr to 0.0455","assignments":{"MATRIX_LR":"0.0455"}}
+{"id":"matrix_lr_0045","description":"lower matrix lr to 0.045","assignments":{"MATRIX_LR":"0.045"}}
+{"id":"matrix_lr_00445","description":"lower matrix lr to 0.0445","assignments":{"MATRIX_LR":"0.0445"}}
+{"id":"matrix_lr_0044","description":"lower matrix lr to 0.044","assignments":{"MATRIX_LR":"0.044"}}
+{"id":"scalar_lr_049","description":"lower scalar lr to 0.49","assignments":{"SCALAR_LR":"0.49"}}
+{"id":"scalar_lr_048","description":"lower scalar lr to 0.48","assignments":{"SCALAR_LR":"0.48"}}
+{"id":"scalar_lr_0475","description":"lower scalar lr to 0.475","assignments":{"SCALAR_LR":"0.475"}}
+{"id":"scalar_lr_045","description":"lower scalar lr to 0.45","assignments":{"SCALAR_LR":"0.45"}}
+{"id":"scalar_lr_0525","description":"raise scalar lr to 0.525","assignments":{"SCALAR_LR":"0.525"}}
+{"id":"scalar_lr_055","description":"raise scalar lr to 0.55","assignments":{"SCALAR_LR":"0.55"}}
+{"id":"frontier_repeat_overnight_h","description":"repeat current frontier overnight soak h","assignments":{}}
+{"id":"embedding_lr_0595","description":"lower embedding lr to 0.595","assignments":{"EMBEDDING_LR":"0.595"}}
+{"id":"embedding_lr_059","description":"lower embedding lr to 0.59","assignments":{"EMBEDDING_LR":"0.59"}}
+{"id":"warmdown_ratio_045","description":"shorten warmdown ratio to 0.45","assignments":{"WARMDOWN_RATIO":"0.45"}}
+{"id":"final_lr_frac_00375","description":"lower final lr frac to 0.0375","assignments":{"FINAL_LR_FRAC":"0.0375"}}

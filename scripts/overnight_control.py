@@ -10,6 +10,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONTROL_ROOT = ROOT / "control"
 STATE_VERSION = 2
 LOCK_FILENAME = ".codex-overnight.lock"
+IGNORABLE_UNTRACKED_BASENAMES = {".DS_Store"}
 SUMMARY_PATTERNS = {
     "val_bpb": re.compile(r"^val_bpb:\s+([0-9.]+)$", re.MULTILINE),
     "peak_vram_mb": re.compile(r"^peak_vram_mb:\s+([0-9.]+)$", re.MULTILINE),
@@ -81,9 +83,23 @@ class Experiment:
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    tmp.replace(path)
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            dir=path.parent,
+            prefix=f"{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            tmp_path = Path(handle.name)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -122,6 +138,10 @@ def process_alive(pid: int | None) -> bool:
         return False
     try:
         os.kill(pid, 0)
+    except PermissionError:
+        # In restricted environments we may not be permitted to signal a live
+        # process that still exists. Treat EPERM as evidence the pid is alive.
+        return True
     except OSError:
         return False
     return True
@@ -184,6 +204,8 @@ def ensure_target_git_state(target_root: Path) -> None:
         if code == "??" and any(path.startswith(prefix) for prefix in TARGET_ALLOWED_PREFIXES):
             continue
         if code == "??" and path == LOCK_FILENAME:
+            continue
+        if code == "??" and Path(path).name in IGNORABLE_UNTRACKED_BASENAMES:
             continue
         disallowed.append(line)
     if disallowed:
@@ -319,8 +341,8 @@ def load_queue_file(queue_path: Path) -> list[Experiment]:
             if not isinstance(description, str) or not description.strip():
                 raise RunnerError(f"invalid description on line {lineno} of {queue_path}")
             assignments = payload["assignments"]
-            if not isinstance(assignments, dict) or len(assignments) != 1:
-                raise RunnerError(f"queue items must be single-variable on line {lineno} of {queue_path}")
+            if not isinstance(assignments, dict) or len(assignments) > 1:
+                raise RunnerError(f"queue items must have zero or one assignment on line {lineno} of {queue_path}")
             normalized: dict[str, str] = {}
             for key, value in assignments.items():
                 if key not in ALLOWED_ASSIGNMENTS:
@@ -455,12 +477,19 @@ def release_target_lock(state: dict[str, Any]) -> None:
 
 
 def commit_experiment(target_root: Path, item: dict[str, Any], log_relpath: str) -> str:
-    run_cmd(["git", "add", "train.py"], cwd=target_root)
+    if item["assignments"]:
+        run_cmd(["git", "add", "train.py"], cwd=target_root)
     message = f"feat: overnight {item['id']}"
     why = f"why: overnight experiment {item['description']}"
-    what = "what changed: " + ", ".join(f"{key}={value}" for key, value in item["assignments"].items())
+    if item["assignments"]:
+        what = "what changed: " + ", ".join(f"{key}={value}" for key, value in item["assignments"].items())
+    else:
+        what = "what changed: repeat current accepted frontier without modifying train.py"
     verify = f"how verified: pending uv run train.py > {log_relpath} 2>&1"
-    run_cmd(["git", "commit", "-m", message, "-m", why, "-m", what, "-m", verify], cwd=target_root)
+    commit_args = ["git", "commit", "-m", message, "-m", why, "-m", what, "-m", verify]
+    if not item["assignments"]:
+        commit_args.insert(2, "--allow-empty")
+    run_cmd(commit_args, cwd=target_root)
     return current_target_head(target_root)
 
 
@@ -487,11 +516,15 @@ def should_stop(state: dict[str, Any], hours: float, max_experiments: int | None
 def append_handoff_summary(state: dict[str, Any], stop_reason: str) -> None:
     handoff_path = target_path(Path(state["target_worktree"]), "HANDOFF_mar10.md")
     elapsed_hours = (time.time() - state["started_at"]) / 3600.0
+    try:
+        report_relpath = str(Path(state["report_path"]).relative_to(Path(state["target_worktree"])))
+    except ValueError:
+        report_relpath = state["report_path"]
     block = [
         "",
         f"## Overnight Summary `{state['tag']}`",
         "",
-        f"- report: `{Path(state['report_path']).relative_to(Path(state['control_root']))}`",
+        f"- report: `{report_relpath}`",
         f"- ending best commit: `{state['current_best_commit']}`",
         f"- ending best `val_bpb`: `{state['current_best_val']:.6f}`",
         f"- attempted: `{state['attempted']}`",
@@ -513,6 +546,8 @@ def finish_report(state: dict[str, Any], stop_reason: str) -> None:
         next_item = state["resolved_queue"][state["queue_index"]]
     kept = [item for item in state["completed"] if item["status"] == "keep"]
     crashes = [item for item in state["completed"] if item["status"] == "crash"]
+    timeouts = [item for item in crashes if "timeout" in str(item.get("reason") or "").lower()]
+    other_crashes = [item for item in crashes if item not in timeouts]
     recovered = [item for item in state["completed"] if item.get("recovered")]
     lines = [
         f"# Overnight Report: `{state['tag']}`",
@@ -526,6 +561,8 @@ def finish_report(state: dict[str, Any], stop_reason: str) -> None:
         f"- keeps: `{state['keep_count']}`",
         f"- discards: `{state['discard_count']}`",
         f"- crashes: `{state['crash_count']}`",
+        f"- timeouts: `{len(timeouts)}`",
+        f"- other crashes: `{len(other_crashes)}`",
         f"- interrupted recoveries: `{len(recovered)}`",
         f"- stopped because: `{stop_reason}`",
         "",
@@ -537,9 +574,15 @@ def finish_report(state: dict[str, Any], stop_reason: str) -> None:
             lines.append(f"- `{item['id']}` `{item['val_bpb']}` {item['description']}")
     else:
         lines.append("- none")
+    lines.extend(["", "## Timeout Summaries", ""])
+    if timeouts:
+        for item in timeouts:
+            lines.append(f"- `{item['id']}` {item['description']} ({item['reason']})")
+    else:
+        lines.append("- none")
     lines.extend(["", "## Crash Summaries", ""])
-    if crashes:
-        for item in crashes:
+    if other_crashes:
+        for item in other_crashes:
             lines.append(f"- `{item['id']}` {item['description']} ({item['reason']})")
     else:
         lines.append("- none")
@@ -881,7 +924,7 @@ def run_loop(state_path: Path, hours: float, timeout_seconds: int, max_experimen
             train_path = target_path(target_root, "train.py")
             before = train_path.read_text()
             changed = rewrite_train_constants(train_path, item["assignments"])
-            if not changed or train_path.read_text() == before:
+            if item["assignments"] and (not changed or train_path.read_text() == before):
                 runtime_skip(state, state_path, item, "assignments already match current frontier")
                 continue
 
