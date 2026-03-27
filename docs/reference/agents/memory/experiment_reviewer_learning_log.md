@@ -306,3 +306,42 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that under the current daytime regime `ADAM_BETAS=(0.85, 0.94)` is preferable to `(0.84, 0.94)`
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260327-111747_autoresearch-mar24-night_176fe6b_5669cb7]
+- Parent workflow: first queued non-Adam daytime probe after committing the re-baselined research memory
+- Trigger: completed run with valid summary metrics after lowering `MATRIX_LR` from `0.046` to `0.0455`
+- Inputs used: program.md, README.md, current train.py, probe commit `5669cb7`, run.log, results.tsv, and the accepted daytime baseline band (`1.385597-1.386521 @ 354-356`)
+- Output delivered: discard verdict with one TSV row and an immediate recommendation to stop the matrix-down axis and switch to `WARMDOWN_RATIO=0.49`
+- What worked: the run completed cleanly and produced a decisive comparison against the daytime baseline
+- Friction: throughput collapsed to `336` steps and the metric degraded to `1.397090`, making the loss unambiguous rather than merely noisy
+- Uncertainty: low uncertainty on the discard verdict because the run lost hard on both `val_bpb` and `num_steps`
+- Reusable pattern: when a non-Adam near-miss from a quieter regime loses badly against the current daytime band, stop that axis immediately instead of continuing the local bracket
+- Proposed dossier change: note that `MATRIX_LR=0.0455` is materially worse than `0.046` under the current daytime regime, despite looking strong overnight
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260327-113829_autoresearch-mar24-night_5669cb7_bff1306]
+- Parent workflow: daytime queue continuation on the strongest schedule-side near-miss after matrix-down discarded
+- Trigger: completed run with valid summary metrics after lowering `WARMDOWN_RATIO` from `0.5` to `0.49`
+- Inputs used: program.md, README.md, current train.py, probe commit `bff1306`, run.log, results.tsv, and the accepted daytime baseline band (`1.385597-1.386521 @ 354-356`)
+- Output delivered: discard verdict with one TSV row and a recommendation to close the schedule-down branch for the current daytime regime
+- What worked: the run completed cleanly and gave a decisive read on the best remaining schedule-side near-miss
+- Friction: throughput slipped to `347` steps and the metric worsened to `1.389555`, so the loss was clear rather than marginal
+- Uncertainty: low uncertainty on the discard verdict because both `val_bpb` and `num_steps` moved the wrong way
+- Reusable pattern: when a schedule-side near-miss from the overnight regime loses on both metric and steps against the daytime band, close that branch and avoid spending more schedule budget in the same regime
+- Proposed dossier change: note that `WARMDOWN_RATIO=0.49` is worse than `0.5` under the current daytime regime, even though it looked promising overnight
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260327-122454_autoresearch-mar24-night_bff1306_d98dbf4]
+- Parent workflow: final queued daytime probe after matrix-down and schedule-down both discarded
+- Trigger: completed run with valid summary metrics after lowering `EMBEDDING_LR` from `0.6` to `0.59`
+- Inputs used: program.md, README.md, current train.py, probe commit `d98dbf4`, run.log, results.tsv, and the accepted daytime baseline band (`1.385597-1.386521 @ 354-356`)
+- Output delivered: discard verdict with one TSV row and a recommendation to restore the frontier and stop this queue branch
+- What worked: the run completed cleanly and decisively closed the last planned branch in the daytime queue
+- Friction: throughput collapsed to `326` steps and the metric degraded sharply to `1.402777`, so the probe was not merely noisy but actively harmful in the daytime regime
+- Uncertainty: low uncertainty on the discard verdict because the loss was large on both quality and throughput
+- Reusable pattern: optimizer-side near-misses from the overnight regime can fail hard in the daytime regime, so once a re-baselined daytime band exists they should be judged only against that band and discarded immediately on a large two-axis loss
+- Proposed dossier change: note that `EMBEDDING_LR=0.59` is materially worse than `0.6` under the current daytime regime
+- Proposed AGENTS or skill change: none
+- Confidence: high

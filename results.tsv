@@ -16,3 +16,6 @@ b697e18	1.389153	0.0	keep	raise adam beta1 to 0.85
 3fff3e5	1.395071	0.0	discard	raise unembedding lr to 0.0055
 df61110	1.406378	0.0	discard	raise final lr frac to 0.0625
 d883544+beta1_084_beta2_094	1.386792	0.0	discard	lower adam beta1 to 0.84 with beta2 fixed at 0.94
+5669cb7	1.397090	0.0	discard	lower matrix lr to 0.0455
+bff1306	1.389555	0.0	discard	shorten warmdown ratio to 0.49
+d98dbf4	1.402777	0.0	discard	lower embedding lr to 0.59
