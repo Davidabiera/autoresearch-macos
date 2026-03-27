@@ -13,14 +13,34 @@
       "id": "frontier_fixed_step_rebooted",
       "kind": "repeatability",
       "on_failure": {
-        "action": "stop",
-        "reason": "rebooted fixed-step isolation failed; keep search blocked and continue backend/MPS investigation"
+        "next_stage": "frontier_fixed_step_same_boot_replay",
+        "reason": "rebooted fixed-step isolation failed; run the same-boot frontier-only replay to separate cold-session effects from persistent runtime drift"
       },
       "on_success": {
         "next_stage": "dedicated_repeatability_fixed_step",
         "reason": "rebooted fixed-step isolation passed; fixed-step dedicated repeatability is earned and will run now"
       },
       "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_frontier_fixed_step_rebooted.jsonl",
+      "required_repeats": 2,
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "frontier_isolation_gate",
+      "timeout_seconds": 750,
+      "trust_target_steps": 354
+    },
+    {
+      "id": "frontier_fixed_step_same_boot_replay",
+      "kind": "repeatability",
+      "on_failure": {
+        "action": "stop",
+        "reason": "same-boot replay failed too; persistent MPS/runtime drift remains the leading hypothesis. Keep search blocked."
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "same-boot replay passed after a reboot-stage failure; cold-session or session-initialization effects are now the leading hypothesis. Keep search blocked."
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_frontier_fixed_step_same_boot_replay.jsonl",
       "required_repeats": 2,
       "stall_abort_count": 3,
       "stall_abort_ms": 30000,
