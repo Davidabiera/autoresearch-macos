@@ -1,0 +1,10 @@
+{"id":"frontier_repeat_quiet_i","description":"repeat current frontier under quiet overnight regime i","assignments":{}}
+{"id":"frontier_repeat_quiet_j","description":"repeat current frontier under quiet overnight regime j","assignments":{}}
+{"id":"matrix_lr_00445_quiet_retest","description":"retest lower matrix lr to 0.0445 under quiet overnight regime","assignments":{"MATRIX_LR":"0.0445"}}
+{"id":"frontier_repeat_quiet_k","description":"repeat current frontier under quiet overnight regime k","assignments":{}}
+{"id":"final_lr_frac_00375_quiet_retest","description":"retest lower final lr frac to 0.0375 under quiet overnight regime","assignments":{"FINAL_LR_FRAC":"0.0375"}}
+{"id":"frontier_repeat_quiet_l","description":"repeat current frontier under quiet overnight regime l","assignments":{}}
+{"id":"warmdown_ratio_049_quiet_retest","description":"retest shorten warmdown ratio to 0.49 under quiet overnight regime","assignments":{"WARMDOWN_RATIO":"0.49"}}
+{"id":"scalar_lr_049_quiet_retest","description":"retest lower scalar lr to 0.49 under quiet overnight regime","assignments":{"SCALAR_LR":"0.49"}}
+{"id":"frontier_repeat_quiet_m","description":"repeat current frontier under quiet overnight regime m","assignments":{}}
+{"id":"embedding_lr_059_quiet_retest","description":"retest lower embedding lr to 0.59 under quiet overnight regime","assignments":{"EMBEDDING_LR":"0.59"}}
