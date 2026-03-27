@@ -254,3 +254,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `UNEMBEDDING_LR=0.005375` is locally superior to `0.0055` on the current live frontier
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260327-000904_autoresearch-mar24-night_c067e50_df61110]
+- Parent workflow: final queued schedule-shape probe after settling the optimizer and unembedding axes
+- Trigger: completed run with valid summary metrics after raising `FINAL_LR_FRAC` from `0.05` to `0.0625`
+- Inputs used: program.md, README.md, current train.py, last commit `df61110`, run.log, results.tsv, and the live frontier (`1.388021 @ 354` steps)
+- Output delivered: discard verdict with one strict TSV row and a recommendation to restore the prior schedule frontier
+- What worked: the run completed cleanly and gave a decisive read on the final queued schedule probe
+- Friction: throughput collapsed relative to the live frontier, finishing at only `315` steps with a much worse metric of `1.406378`
+- Uncertainty: low uncertainty on the discard verdict because the run lost hard on both `val_bpb` and `num_steps`
+- Reusable pattern: once the optimizer and head-lr frontier are settled, pushing the final LR floor upward can still be strongly harmful if it materially reduces usable steps on a wall-clock-limited run
+- Proposed dossier change: note that `FINAL_LR_FRAC=0.0625` is materially worse than `0.05` on the current live frontier
+- Proposed AGENTS or skill change: none
+- Confidence: high
