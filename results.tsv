@@ -19,3 +19,4 @@ d883544+beta1_084_beta2_094	1.386792	0.0	discard	lower adam beta1 to 0.84 with b
 5669cb7	1.397090	0.0	discard	lower matrix lr to 0.0455
 bff1306	1.389555	0.0	discard	shorten warmdown ratio to 0.49
 d98dbf4	1.402777	0.0	discard	lower embedding lr to 0.59
+7c82ce7	1.411985	0.0	discard	lower final lr frac to 0.04

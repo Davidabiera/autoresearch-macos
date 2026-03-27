@@ -345,3 +345,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `EMBEDDING_LR=0.59` is materially worse than `0.6` under the current daytime regime
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260327-135312_autoresearch-mar24-night_5c73708_7c82ce7]
+- Parent workflow: first post-queue daytime probe after shifting from Adam-local tuning to the strongest remaining orthogonal schedule lever
+- Trigger: completed rerun with valid summary metrics after lowering `FINAL_LR_FRAC` from `0.05` to `0.04`
+- Inputs used: program.md, README.md, current train.py, probe commit `7c82ce7`, run.log, results.tsv, the overnight controller ledger showing strong quiet-regime near-misses for lower final-LR floor, and the accepted daytime baseline band (`1.385597-1.386521 @ 354-356`)
+- Output delivered: discard verdict with one TSV row and an immediate recommendation to stop daytime mutation search rather than continue probing neighboring schedule-floor values
+- What worked: the rerun completed cleanly end-to-end after allowing the full post-training evaluation tail, so the result is trustworthy
+- Friction: the probe regressed catastrophically to `1.411985` with only `304` steps, far outside the daytime comparison band and substantially worse than even the recent daytime discards
+- Uncertainty: low uncertainty on the discard verdict because both quality and throughput collapsed hard
+- Reusable pattern: schedule-floor settings that look strong in the quiet overnight regime can fail outright in the daytime regime, so broad schedule exploration should be reserved for quiet windows once a daytime ruler is established
+- Proposed dossier change: note that `FINAL_LR_FRAC=0.04` is materially worse than `0.05` under the current daytime regime and should not be revisited in daytime search
+- Proposed AGENTS or skill change: none
+- Confidence: high
