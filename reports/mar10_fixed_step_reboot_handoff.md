@@ -68,5 +68,5 @@ python3 /tmp/autoresearch-reliability/scripts/session_status.py --branch autores
 
 Checkpointed branches:
 
-- reliability: `bc6104c`
+- reliability: `a49bae8`
 - control: `28154fc`
