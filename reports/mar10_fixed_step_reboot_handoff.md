@@ -36,6 +36,30 @@ What that launcher does:
 2. fixed-step dedicated repeatability, but only if rebooted fixed-step isolation passes
 3. if rebooted fixed-step isolation fails, it now runs a same-boot frontier-only replay to separate cold-session effects from persistent runtime drift
 
+Decision ladder:
+
+1. rebooted frontier pair passes only if:
+   - both repeats hit `354` steps
+   - both emit full completion markers through `post_summary`
+   - both emit `completion_result`
+   - no timeout, no stall-abort, no truncation, no completion error
+   - spread `<= 0.0010`
+   - mean drift vs `1.386688` `<= 0.0010`
+2. if rebooted frontier fails and the same-boot replay passes:
+   - cold-session or session-initialization effects are the leading hypothesis
+   - search stays blocked
+3. if rebooted frontier fails and the same-boot replay fails:
+   - persistent MPS/runtime drift is the leading hypothesis
+   - search stays blocked
+4. if rebooted frontier passes but fixed-step dedicated repeatability fails:
+   - frontier-only trust improved
+   - `WEIGHT_DECAY=0.22` stays unresolved
+   - search stays blocked
+5. if fixed-step dedicated repeatability passes:
+   - confirm `WEIGHT_DECAY=0.22` only if `weight_decay_mean < frontier_mean - 0.0010`
+   - otherwise discard `WEIGHT_DECAY=0.22` as the next candidate
+   - only then is a bounded day-2 canary earned
+
 Control surface:
 
 ```bash
@@ -44,5 +68,5 @@ python3 /tmp/autoresearch-reliability/scripts/session_status.py --branch autores
 
 Checkpointed branches:
 
-- reliability: `b3a8644`
-- control: `0965c4f`
+- reliability: `bc6104c`
+- control: `28154fc`
