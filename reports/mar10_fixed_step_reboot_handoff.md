@@ -66,7 +66,7 @@ Control surface:
 python3 /tmp/autoresearch-reliability/scripts/session_status.py --branch autoresearch/mar10 --target-root /Users/davidabiera/Projects/team/autoresearch-macos --control-root /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control --format md
 ```
 
-Checkpointed branches:
+Checkpointed logic:
 
-- reliability: `a49bae8`
-- control: `28154fc`
+- reliability trust-path logic: `bc6104c`
+- control trust-path plan: `28154fc`
