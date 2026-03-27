@@ -13,3 +13,4 @@ b697e18	1.389153	0.0	keep	raise adam beta1 to 0.85
 5ea108a	1.396688	0.0	discard	raise adam beta1 to 0.9
 25c1306	1.396177	0.0	discard	raise adam beta2 to 0.97
 46d335e	1.388021	0.0	keep	raise unembedding lr to 0.005375
+3fff3e5	1.395071	0.0	discard	raise unembedding lr to 0.0055

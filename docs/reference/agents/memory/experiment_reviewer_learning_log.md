@@ -241,3 +241,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `UNEMBEDDING_LR=0.005375` outperforms `0.00525` when paired with `ADAM_BETAS=(0.85, 0.95)`
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260326-235828_autoresearch-mar24-night_ce36d62_3fff3e5]
+- Parent workflow: queued upper-side follow-up after a new unembedding-lr keep
+- Trigger: completed run with valid summary metrics after raising `UNEMBEDDING_LR` from `0.005375` to `0.0055`
+- Inputs used: program.md, README.md, current train.py, last commit `3fff3e5`, run.log, results.tsv, and the live frontier (`1.388021 @ 354` steps)
+- Output delivered: discard verdict with one strict TSV row and a recommendation to restore the new unembedding frontier before moving to the final queue slot
+- What worked: the run completed cleanly and provided a decisive upper-side comparison against the new head-LR winner
+- Friction: throughput degraded materially in the back half of training, finishing at only `339` steps and losing the metric at `1.395071`
+- Uncertainty: low uncertainty on the discard verdict because both quality and throughput regressed well inside the valid comparison band
+- Reusable pattern: once a small unembedding-lr increase keeps, one bounded upper-side follow-up is enough to bracket the axis when the next step loses on both metric and step count
+- Proposed dossier change: note that `UNEMBEDDING_LR=0.005375` is locally superior to `0.0055` on the current live frontier
+- Proposed AGENTS or skill change: none
+- Confidence: high
