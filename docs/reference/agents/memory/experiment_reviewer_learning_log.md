@@ -215,3 +215,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `ADAM_BETAS=(0.85, 0.95)` is locally superior to both `(0.8, 0.95)` and `(0.9, 0.95)` on the current frontier
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260326-223722_autoresearch-mar24-night_f73979f_25c1306]
+- Parent workflow: run 1 of the queued beta2 and unembedding search from the live frontier
+- Trigger: completed run with valid summary metrics after raising `ADAM_BETAS` from `(0.85, 0.95)` to `(0.85, 0.97)`
+- Inputs used: program.md, README.md, current train.py, last commit `25c1306`, run.log, results.tsv, and the live frontier (`1.389153 @ 348` steps)
+- Output delivered: discard verdict with one strict TSV row and a recommendation to restore the prior beta2 frontier before continuing the queue
+- What worked: cadence remained healthy through training and the run completed with a fully comparable summary block
+- Friction: the result regressed decisively versus the live frontier, landing at `1.396177` with only `340` steps against `1.389153` with `348` steps
+- Uncertainty: low uncertainty on the discard verdict because the run lost on both metric and throughput while staying inside the valid step-count band
+- Reusable pattern: after a beta1 improvement, a bounded beta2 increase that loses on both `val_bpb` and `num_steps` should be discarded immediately and the queue should skip the higher beta2 follow-up
+- Proposed dossier change: note that `ADAM_BETAS=(0.85, 0.95)` remains superior to `(0.85, 0.97)` on the current live frontier
+- Proposed AGENTS or skill change: none
+- Confidence: high
