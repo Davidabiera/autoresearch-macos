@@ -583,6 +583,10 @@ def next_stage_from_summary(summary: dict[str, Any], stage: dict[str, Any]) -> t
     return None, str(on_failure.get("reason") or summary["reason"])
 
 
+def stage_should_advance(summary: dict[str, Any], next_stage_id: str | None) -> bool:
+    return bool(summary.get("passed")) or next_stage_id is not None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stage-driven session orchestration for autoresearch.")
     parser.add_argument("--plan", required=True)
@@ -669,13 +673,18 @@ def main() -> int:
         next_stage_id, reason = next_stage_from_summary(summary, stage)
         stages_run += 1
 
-        if not summary["passed"]:
+        if not stage_should_advance(summary, next_stage_id):
             orchestrator_state["finished"] = True
             orchestrator_state["ended_at"] = time.time()
             orchestrator_state["next_action"] = f"stop autonomous search: {reason}"
             orchestrator_state["overnight_eligible"] = False
             write_orchestrator_state(state_path, orchestrator_state)
             return 0
+
+        if not summary["passed"] and next_stage_id is not None:
+            orchestrator_state["next_action"] = f"advance to stage `{next_stage_id}` after failure: {reason}"
+            write_orchestrator_state(state_path, orchestrator_state)
+            continue
 
         if next_stage_id is None:
             orchestrator_state["finished"] = True

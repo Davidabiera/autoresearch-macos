@@ -34,6 +34,7 @@ What that launcher does:
 
 1. rebooted fixed-step frontier isolation
 2. fixed-step dedicated repeatability, but only if rebooted fixed-step isolation passes
+3. if rebooted fixed-step isolation fails, it now runs a same-boot frontier-only replay to separate cold-session effects from persistent runtime drift
 
 Control surface:
 

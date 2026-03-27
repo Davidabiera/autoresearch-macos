@@ -17,7 +17,7 @@ from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import reset_target_commit, terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
-from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers  # noqa: E402
+from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers, stage_should_advance  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
     environment_status,
@@ -334,6 +334,10 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(next_stage, "frontier_soak")
         self.assertIn("frontier-only soak measurement", reason)
 
+    def test_failed_stage_can_advance_to_followup_diagnostic(self) -> None:
+        self.assertTrue(stage_should_advance({"passed": False}, "frontier_fixed_step_same_boot_replay"))
+        self.assertFalse(stage_should_advance({"passed": False}, None))
+
     def test_dedicated_repeatability_success_stops_even_with_recommended_search_stage(self) -> None:
         summary = {
             "passed": True,
@@ -388,6 +392,22 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(env["trust_state"], "conditionally recovered")
         self.assertEqual(env["next_stage"], "dedicated_repeatability_fixed_step")
         self.assertEqual(env["search_blocked_reason"], "fixed-step dedicated repeatability is in progress")
+
+    def test_environment_status_keeps_same_boot_replay_untrusted_even_on_pass(self) -> None:
+        context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        orchestrator_state = {
+            "completed_stages": [
+                {
+                    "stage_id": "frontier_fixed_step_same_boot_replay",
+                    "passed": True,
+                    "reason": "same-boot replay passed after a reboot-stage failure; cold-session or session-initialization effects are now the leading hypothesis. Keep search blocked.",
+                }
+            ]
+        }
+        env = environment_status(context, None, None, [], orchestrator_state)
+        self.assertEqual(env["trust_state"], "untrusted")
+        self.assertIsNone(env["next_stage"])
+        self.assertIn("cold-session", env["search_blocked_reason"])
 
 
 if __name__ == "__main__":
