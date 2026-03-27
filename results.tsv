@@ -9,3 +9,5 @@ fb177dc	1.384670	0.0	discard	raise unembedding lr to 0.0055
 88c8ecb	1.392274	0.0	discard	extend warmdown ratio to 0.55
 c3527f9	0.000000	0.0	crash	raise embedding lr to 0.63
 b92a0a3	1.395942	0.0	discard	lower weight decay to 0.19
+b697e18	1.389153	0.0	keep	raise adam beta1 to 0.85
+5ea108a	1.396688	0.0	discard	raise adam beta1 to 0.9

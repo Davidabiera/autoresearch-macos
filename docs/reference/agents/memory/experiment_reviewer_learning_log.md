@@ -189,3 +189,29 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that lower weight decay on the current Muon frontier degraded both quality and throughput under the accepted quiet-state baseline
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260326-200410_autoresearch-mar24-night_416c0cd_b697e18]
+- Parent workflow: bounded follow-up search after re-baselining and discarding lower weight decay
+- Trigger: completed run with valid summary metrics after raising `ADAM_BETAS` from `(0.8, 0.95)` to `(0.85, 0.95)`
+- Inputs used: program.md, README.md, current train.py, last commit `b697e18`, run.log, results.tsv, and the accepted quiet live baseline (`1.391030 @ 341` steps)
+- Output delivered: keep verdict with one strict TSV row and one bounded continuation recommendation
+- What worked: the run improved both quality and throughput, landing at `1.389153` with `348` steps versus the accepted live baseline at `1.391030` with `341` steps
+- Friction: host load was visibly elevated before launch, so early cadence had to be monitored to confirm the run remained comparable
+- Uncertainty: low uncertainty on the keep verdict because the run won on both `val_bpb` and `num_steps`
+- Reusable pattern: after re-baselining a noisy desktop environment, a new optimizer setting that improves both metric and throughput can safely become the new live frontier even if the historical best remains lower
+- Proposed dossier change: note that increasing Adam beta1 to `0.85` improved the current frontier under the re-established measurement regime
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260326-202151_autoresearch-mar24-night_b697e18_5ea108a]
+- Parent workflow: bounded continuation on a newly winning beta1 axis
+- Trigger: completed run with valid summary metrics after raising `ADAM_BETAS` from `(0.85, 0.95)` to `(0.9, 0.95)`
+- Inputs used: program.md, README.md, current train.py, last commit `5ea108a`, run.log, results.tsv, and the new live frontier (`1.389153 @ 348` steps)
+- Output delivered: discard verdict with one strict TSV row and one frontier-restore recommendation
+- What worked: the run cleanly bracketed the beta1 axis by testing one more bounded increase beyond the new winner
+- Friction: throughput slipped to `337` steps and the metric regressed to `1.396688`, making the miss decisive
+- Uncertainty: low uncertainty on the discard verdict because both quality and throughput worsened versus the new frontier
+- Reusable pattern: once a beta1 increase produces a keep, one additional bounded increase is enough to bracket the local optimum when the follow-up loses on both metric and step count
+- Proposed dossier change: note that `ADAM_BETAS=(0.85, 0.95)` is locally superior to both `(0.8, 0.95)` and `(0.9, 0.95)` on the current frontier
+- Proposed AGENTS or skill change: none
+- Confidence: high
