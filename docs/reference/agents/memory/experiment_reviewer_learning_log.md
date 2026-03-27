@@ -228,3 +228,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `ADAM_BETAS=(0.85, 0.95)` remains superior to `(0.85, 0.97)` on the current live frontier
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260326-233906_autoresearch-mar24-night_0bdedde_46d335e]
+- Parent workflow: queued unembedding-lr search after settling the beta2 axis
+- Trigger: completed run with valid summary metrics after raising `UNEMBEDDING_LR` from `0.00525` to `0.005375`
+- Inputs used: program.md, README.md, current train.py, last commit `46d335e`, run.log, results.tsv, and the live frontier (`1.389153 @ 348` steps)
+- Output delivered: keep verdict with one strict TSV row and a recommendation to continue the queued upper-side unembedding probe
+- What worked: the run improved both quality and throughput, finishing at `1.388021` with `354` steps against the prior live frontier at `1.389153` with `348` steps
+- Friction: none beyond the normal long eval tail after training completed
+- Uncertainty: low uncertainty on the keep verdict because the run won on both `val_bpb` and `num_steps`
+- Reusable pattern: once the optimizer frontier is settled, small upward unembedding-lr moves can still buy both better metric and more steps on the current live regime
+- Proposed dossier change: note that `UNEMBEDDING_LR=0.005375` outperforms `0.00525` when paired with `ADAM_BETAS=(0.85, 0.95)`
+- Proposed AGENTS or skill change: none
+- Confidence: high
