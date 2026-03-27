@@ -267,3 +267,42 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `FINAL_LR_FRAC=0.0625` is materially worse than `0.05` on the current live frontier
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260327-094237_autoresearch-mar24-night_d883544_daytime_rebaseline]
+- Parent workflow: morning confirmation gate after adopting the overnight winner `d883544` as the provisional live frontier
+- Trigger: two unchanged daytime repeats were run from the current code state to test whether the overnight late-band and overnight winner reproduced under active daytime conditions
+- Inputs used: overnight report, overnight controller state, current train.py, current HEAD `d883544`, and two unchanged daytime run logs archived from the root worktree
+- Output delivered: measurement downgrade, not a new search verdict; the recommendation is to pause mutation search and re-baseline the daytime regime before spending more hyperparameter budget
+- What worked: both repeats completed cleanly with valid summary blocks, making the re-baseline conclusion trustworthy
+- Friction: the overnight winner did not reproduce in daytime conditions, landing at `1.388404 @ 350` steps and `1.391703 @ 342` steps versus the quiet overnight late-repeat band around `1.379495-1.382189 @ 365-372` steps
+- Uncertainty: low uncertainty that the measurement regime shifted back during the day; moderate uncertainty about the true daytime live baseline until more unchanged repeats are collected
+- Reusable pattern: when a quiet overnight winner beats the best repeat by only a narrow margin, the next daytime action must be an unchanged confirmation; if two daytime repeats miss the overnight repeat band materially, pause mutation search and treat machine state as the active confounder
+- Proposed dossier change: note that `ADAM_BETAS=(0.85, 0.94)` remained the overnight best but was not reproduced in the daytime regime, so daytime search should re-baseline before exploring neighboring Adam settings
+- Proposed AGENTS or skill change: none
+- Confidence: high
+
+## [20260327-100442_autoresearch-mar24-night_d883544_daytime_rebaseline_cluster]
+- Parent workflow: continuation of the daytime re-baseline after the first two confirmation repeats showed a measurement downgrade
+- Trigger: two additional unchanged daytime repeats were run from `d883544` to decide whether the daytime surface was stabilizing or still too noisy for mutation search
+- Inputs used: current train.py at `ADAM_BETAS=(0.85, 0.94)`, four unchanged daytime repeat logs, and the overnight repeat cluster for comparison
+- Output delivered: accepted provisional daytime live baseline for the current machine state, without changing the code frontier
+- What worked: the third and fourth daytime repeats tightened materially to `1.385597 @ 356` and `1.386521 @ 354`, much closer to each other than the first two repeats
+- Friction: the recovered daytime band still sat well above the quiet overnight late-repeat band, so cross-regime comparisons remained invalid
+- Uncertainty: moderate uncertainty on the exact daytime frontier center, low uncertainty that the current usable daytime band is around `1.38606 @ 355` from the last two repeats
+- Reusable pattern: when the first two daytime repeats miss the overnight band but the next two tighten into a narrow local cluster, use the late cluster as the active daytime baseline and compare subsequent probes only against that band
+- Proposed dossier change: note that the current daytime measurement regime partially recovered to about `1.38606 @ 355` while still underperforming the overnight late-repeat regime
+- Proposed AGENTS or skill change: none
+- Confidence: medium-high
+
+## [20260327-101310_autoresearch-mar24-night_d883544_beta1_084_beta2_094]
+- Parent workflow: first bounded mutation after establishing a provisional daytime baseline from the late repeat cluster
+- Trigger: completed run with valid summary metrics after lowering `ADAM_BETAS` from `(0.85, 0.94)` to `(0.84, 0.94)`
+- Inputs used: program.md, README.md, current train.py, current diff for the one-line beta1 change, run.log, results.tsv, and the accepted daytime baseline (`1.38606 @ 355` from the last two unchanged repeats)
+- Output delivered: discard verdict with one TSV row and a frontier-restore recommendation
+- What worked: throughput stayed fully comparable at `356` steps and the run completed cleanly with a valid summary block
+- Friction: the metric regressed slightly to `1.386792`, missing the daytime baseline despite matching its throughput
+- Uncertainty: low uncertainty on the discard verdict because the probe lost on metric while staying in-band on steps
+- Reusable pattern: once a provisional daytime baseline exists, a neighboring optimizer probe that matches throughput but loses even modestly on `val_bpb` should be discarded immediately rather than over-interpreted as noise
+- Proposed dossier change: note that under the current daytime regime `ADAM_BETAS=(0.85, 0.94)` is preferable to `(0.84, 0.94)`
+- Proposed AGENTS or skill change: none
+- Confidence: high

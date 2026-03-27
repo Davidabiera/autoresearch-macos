@@ -15,3 +15,4 @@ b697e18	1.389153	0.0	keep	raise adam beta1 to 0.85
 46d335e	1.388021	0.0	keep	raise unembedding lr to 0.005375
 3fff3e5	1.395071	0.0	discard	raise unembedding lr to 0.0055
 df61110	1.406378	0.0	discard	raise final lr frac to 0.0625
+d883544+beta1_084_beta2_094	1.386792	0.0	discard	lower adam beta1 to 0.84 with beta2 fixed at 0.94
