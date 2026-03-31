@@ -10,7 +10,7 @@ ARM_STATE_PATH=$WORKTREE_ROOT/state/mar10_fixed_step_post_reboot_arm.env
 mkdir -p "$(dirname "$LOG_PATH")"
 mkdir -p "$(dirname "$ARM_STATE_PATH")"
 
-CURRENT_BOOT_EPOCH=$(sysctl -n kern.boottime | sed -E 's/.*sec = ([0-9]+).*/\1/')
+CURRENT_BOOT_EPOCH=$(sysctl -n kern.boottime | sed -E 's/^\{ sec = ([0-9]+), usec = [0-9]+ \}.*/\1/')
 if [[ -z "$CURRENT_BOOT_EPOCH" ]]; then
   {
     echo "mar10_fixed_step_post_reboot_once fired at $(date)"

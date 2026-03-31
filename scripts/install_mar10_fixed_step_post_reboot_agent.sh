@@ -7,7 +7,7 @@ PLIST_PATH=/Users/davidabiera/Library/LaunchAgents/com.codex.mar10-fixed-step-po
 LOG_PATH=$WORKTREE_ROOT/logs/mar10_fixed_step_post_reboot_launch.log
 WRAPPER_PATH=$SCRIPT_DIR/mar10_fixed_step_post_reboot_once.sh
 ARM_STATE_PATH=$WORKTREE_ROOT/state/mar10_fixed_step_post_reboot_arm.env
-CURRENT_BOOT_EPOCH=$(sysctl -n kern.boottime | sed -E 's/.*sec = ([0-9]+).*/\1/')
+CURRENT_BOOT_EPOCH=$(sysctl -n kern.boottime | sed -E 's/^\{ sec = ([0-9]+), usec = [0-9]+ \}.*/\1/')
 
 mkdir -p "$(dirname "$PLIST_PATH")"
 mkdir -p "$(dirname "$LOG_PATH")"

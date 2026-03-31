@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import subprocess
@@ -84,12 +85,28 @@ def current_boot_epoch() -> int | None:
             capture_output=True,
             text=True,
         )
+        match = re.search(r"\{ sec = (\d+),", proc.stdout)
+        if match:
+            return int(match.group(1))
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    try:
+        proc = subprocess.run(
+            ["/bin/zsh", "-lc", "last reboot | head -1"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     except (FileNotFoundError, subprocess.CalledProcessError):
         return None
-    match = re.search(r"sec = (\d+)", proc.stdout)
+    match = re.search(r"reboot time\s+\w+\s+(\w+\s+\d+\s+\d+:\d+)", proc.stdout)
     if not match:
         return None
-    return int(match.group(1))
+    now = dt.datetime.now()
+    boot = dt.datetime.strptime(f"{match.group(1)} {now.year}", "%b %d %H:%M %Y")
+    if boot > now:
+        boot = boot.replace(year=boot.year - 1)
+    return int(boot.timestamp())
 
 
 def read_post_reboot_arm_state() -> dict[str, str]:
