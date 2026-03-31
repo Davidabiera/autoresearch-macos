@@ -28,7 +28,7 @@ if [[ ! -f "$ARM_STATE_PATH" ]]; then
   exit 1
 fi
 
-source "$ARM_STATE_PATH"
+ARMED_BOOT_EPOCH=$(sed -n 's/^ARMED_BOOT_EPOCH=//p' "$ARM_STATE_PATH" | head -n 1)
 
 {
   echo "mar10_fixed_step_post_reboot_once fired at $(date)"
@@ -41,6 +41,14 @@ source "$ARM_STATE_PATH"
 if [[ -z "${ARMED_BOOT_EPOCH:-}" ]]; then
   {
     echo "arm state is missing ARMED_BOOT_EPOCH"
+    echo "preserving LaunchAgent for manual inspection"
+  } >>"$LOG_PATH"
+  exit 1
+fi
+
+if [[ ! "$ARMED_BOOT_EPOCH" =~ ^[0-9]+$ ]]; then
+  {
+    echo "arm state contains a non-numeric ARMED_BOOT_EPOCH: $ARMED_BOOT_EPOCH"
     echo "preserving LaunchAgent for manual inspection"
   } >>"$LOG_PATH"
   exit 1

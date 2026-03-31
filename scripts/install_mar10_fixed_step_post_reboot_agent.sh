@@ -12,11 +12,11 @@ CURRENT_BOOT_EPOCH=$(sysctl -n kern.boottime | sed -E 's/^\{ sec = ([0-9]+), use
 mkdir -p "$(dirname "$PLIST_PATH")"
 mkdir -p "$(dirname "$LOG_PATH")"
 mkdir -p "$(dirname "$ARM_STATE_PATH")"
-touch "$LOG_PATH"
+: >"$LOG_PATH"
 
 cat >"$ARM_STATE_PATH" <<EOF
 ARMED_BOOT_EPOCH=$CURRENT_BOOT_EPOCH
-ARMED_AT=$(date '+%Y-%m-%d %H:%M:%S %Z')
+ARMED_AT_ISO=$(date '+%Y-%m-%dT%H:%M:%S%z')
 EOF
 
 {
