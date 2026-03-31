@@ -461,6 +461,24 @@ class AutoresearchToolTests(unittest.TestCase):
                 None,
                 False,
                 1001,
+                None,
+            )
+        )
+
+    def test_invalid_reboot_launch_orchestration_clears_once_runner_error_exists(self) -> None:
+        active_run = {
+            "stage_id": "frontier_fixed_step_rebooted",
+            "started_at": 1000.0,
+        }
+        self.assertFalse(
+            invalid_reboot_launch_orchestration(
+                active_run,
+                None,
+                False,
+                None,
+                False,
+                1001,
+                "git worktree must be clean except known artifacts; found:\n M train.py",
             )
         )
 
@@ -478,6 +496,7 @@ class AutoresearchToolTests(unittest.TestCase):
                 True,
                 orchestrator_state,
                 False,
+                None,
                 None,
             )
         )

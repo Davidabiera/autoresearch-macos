@@ -121,6 +121,18 @@ def read_post_reboot_arm_state() -> dict[str, str]:
     return payload
 
 
+def latest_post_reboot_runner_error() -> str | None:
+    if not POST_REBOOT_LAUNCH_LOG.exists():
+        return None
+    matches = re.findall(
+        r"overnight_runner error:\s*(.+)",
+        POST_REBOOT_LAUNCH_LOG.read_text(errors="replace"),
+    )
+    if not matches:
+        return None
+    return matches[-1].strip()
+
+
 def informative_results(completed: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         item
@@ -222,9 +234,13 @@ def invalid_reboot_launch_orchestration(
     orchestrator_state: dict[str, Any] | None,
     orchestrator_is_interrupted: bool,
     boot_epoch: int | None,
+    runner_error: str | None,
 ) -> bool:
     stage_id = str(active_run.get("stage_id") or "") if active_run else str((orchestrator_state or {}).get("current_stage_id") or "")
     if stage_id != "frontier_fixed_step_rebooted":
+        return False
+    completed_stages = list((orchestrator_state or {}).get("completed_stages", []) or [])
+    if runner_error or completed_stages:
         return False
     started_at = float(
         (active_run or {}).get("started_at")
@@ -237,7 +253,6 @@ def invalid_reboot_launch_orchestration(
         return False
     attempted = int((active_state or {}).get("attempted", 0) or 0)
     completed = list((active_state or {}).get("completed", []) or [])
-    completed_stages = list((orchestrator_state or {}).get("completed_stages", []) or [])
     return attempted == 0 and not completed and not completed_stages
 
 
@@ -251,6 +266,7 @@ def post_reboot_handoff_status(
     log_exists = POST_REBOOT_LAUNCH_LOG.exists()
     boot_epoch = current_boot_epoch()
     arm_state = read_post_reboot_arm_state()
+    runner_error = latest_post_reboot_runner_error()
     return {
         "agent_plist_path": str(POST_REBOOT_AGENT_PLIST),
         "agent_plist_exists": POST_REBOOT_AGENT_PLIST.exists(),
@@ -262,6 +278,7 @@ def post_reboot_handoff_status(
         "launch_log_path": str(POST_REBOOT_LAUNCH_LOG),
         "launch_log_exists": log_exists,
         "launch_log_size_bytes": POST_REBOOT_LAUNCH_LOG.stat().st_size if log_exists else 0,
+        "runner_error": runner_error,
         "installer_path": fixed_step_post_reboot_installer(),
         "wrapper_path": str(SCRIPT_DIR / "mar10_fixed_step_post_reboot_once.sh"),
         "invalid_launch_orchestration": invalid_reboot_launch_orchestration(
@@ -271,6 +288,7 @@ def post_reboot_handoff_status(
             orchestrator_state,
             orchestrator_is_interrupted,
             boot_epoch,
+            runner_error,
         ),
     }
 
@@ -367,6 +385,7 @@ def environment_status(
     blocked_reason: str | None = None
     next_stage: str | None = None
     bundle_path = None
+    runner_error = str(post_reboot_handoff.get("runner_error") or "") or None
     if latest_backend:
         bundle_path = latest_backend.get("runtime_forensics_bundle")
     latest_backend_stage_id = str(latest_backend.get("stage_id") or "") if latest_backend else ""
@@ -383,12 +402,17 @@ def environment_status(
         blocked_reason = "rebooted dedicated-session fixed-step isolation is still required before repeatability can reopen"
         next_stage = "frontier_fixed_step_rebooted"
     elif latest_backend_stage_id == "frontier_fixed_step_rebooted":
-        state = "conditionally recovered" if latest_backend and latest_backend.get("passed") else "untrusted"
-        blocked_reason = "fixed-step dedicated repeatability is still required before search can reopen"
-        next_stage = "dedicated_repeatability_fixed_step"
+        if latest_backend and latest_backend.get("passed"):
+            state = "conditionally recovered"
+            blocked_reason = "fixed-step dedicated repeatability is still required before search can reopen"
+            next_stage = "dedicated_repeatability_fixed_step"
+        else:
+            state = "untrusted"
+            blocked_reason = runner_error or str(latest_backend.get("reason"))
+            next_stage = "frontier_fixed_step_same_boot_replay"
     elif latest_backend_stage_id == "frontier_fixed_step_same_boot_replay":
         state = "untrusted"
-        blocked_reason = str(latest_backend.get("reason"))
+        blocked_reason = runner_error or str(latest_backend.get("reason"))
         next_stage = None
     elif latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
         state = "search eligible"
@@ -568,6 +592,9 @@ def recommended_next_action(
     environment: dict[str, Any],
     post_reboot_handoff: dict[str, Any],
 ) -> str:
+    latest_backend = environment.get("latest_backend_isolation")
+    latest_repeat = environment.get("latest_repeatability_stage")
+    runner_error = str(post_reboot_handoff.get("runner_error") or "")
     if blockers:
         return "do not launch autonomous stages until blockers are cleared: " + "; ".join(blockers)
     if post_reboot_handoff.get("invalid_launch_orchestration"):
@@ -575,13 +602,16 @@ def recommended_next_action(
             "latest rebooted trust attempt is invalid launch orchestration; recreate the LaunchAgent on disk only with "
             f"`{post_reboot_handoff['installer_path']}`, do not bootstrap it, then reboot and rerun the rebooted fixed-step gate"
         )
-    if orchestrator_is_interrupted:
+    if runner_error and "git worktree must be clean except known artifacts" in runner_error:
+        return (
+            "execution-baseline preflight failed because tracked files are dirty; restore the execution worktree to a clean tracked state "
+            "(notably reset `TRUST_TARGET_STEPS` in the execution baseline `train.py` back to `0`), keep only runner-owned `logs/` and "
+            "`state/`, then reinstall the post-reboot LaunchAgent and rerun exactly one rebooted fixed-step trust attempt"
+        )
+    if orchestrator_is_interrupted and not latest_backend:
         return "previous orchestrator session is interrupted; inspect its state and relaunch through the orchestrator"
-    if active_run_is_interrupted:
+    if active_run_is_interrupted and not latest_backend:
         return "previous stage runner is interrupted; inspect its state and relaunch through the orchestrator"
-
-    latest_backend = environment.get("latest_backend_isolation")
-    latest_repeat = environment.get("latest_repeatability_stage")
     if latest_repeat and latest_repeat.get("passed") and latest_backend and latest_backend.get("passed"):
         recommended_stage = latest_repeat.get("recommended_search_stage") or environment.get("next_stage") or "day-2 canary"
         return (
@@ -859,6 +889,7 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
     lines.append(f"- agent plist: `{handoff['agent_plist_path']}` exists=`{str(bool(handoff['agent_plist_exists'])).lower()}`")
     lines.append(f"- arm state: `{handoff['arm_state_path']}` exists=`{str(bool(handoff['arm_state_exists'])).lower()}` armed_boot_epoch=`{handoff['armed_boot_epoch']}` current_boot_epoch=`{handoff['current_boot_epoch']}`")
     lines.append(f"- launch log: `{handoff['launch_log_path']}` exists=`{str(bool(handoff['launch_log_exists'])).lower()}` size_bytes=`{handoff['launch_log_size_bytes']}`")
+    lines.append(f"- latest runner error: `{handoff.get('runner_error')}`")
     lines.append(f"- invalid launch orchestration: `{str(bool(handoff['invalid_launch_orchestration'])).lower()}`")
 
     lines.extend(["", "## Recent Exploration Results", ""])
