@@ -358,3 +358,16 @@ The reviewer itself is read-only and must return a fenced `LEARNING_LOG_ENTRY` b
 - Proposed dossier change: note that `FINAL_LR_FRAC=0.04` is materially worse than `0.05` under the current daytime regime and should not be revisited in daytime search
 - Proposed AGENTS or skill change: none
 - Confidence: high
+
+## [20260331_autoresearch-mar24-night_overnight_v2_closeout]
+- Parent workflow: research-branch closeout after the tight overnight v2 queue finished from settled frontier `befa711`
+- Trigger: completed controller session in `overnight_mar24-night.json` with `10` attempts, `0` keeps, `3` discards, and `7` timeout crashes
+- Inputs used: canonical overnight controller state/report, the 10 v2 run logs, earlier successful overnight session state/report, and the last stable daytime repeat logs
+- Output delivered: backfilled TSV rows for the overnight v2 session, frontier unchanged at `befa711`, and a written diagnosis that broad search remains paused
+- What worked: the first three v2 runs completed cleanly and were decisive losses against the quiet-regime benchmark (`1.392497 @ 340`, `1.392336 @ 340`, `1.391057 @ 343` vs `1.378980`)
+- Friction: after queue slot 3 the runtime collapsed. `frontier_repeat_quiet_k` finished training (`300.4s`, `350` steps) but still hit the `600s` wall-clock guard before clean completion, then the remaining six runs degraded into extreme per-step latency from the opening steps and timed out without usable summaries
+- Uncertainty: medium on the exact root cause, low on the dominant failure class. The pattern is best labeled `environment slowdown`, not a productive hyperparameter signal
+- Reusable pattern: when a quiet-window queue flips from normal `~340-350` step runs into repeated immediate multi-second and multi-minute step times after a few slots, stop interpreting later mutation outcomes and treat the night as operationally degraded
+- Proposed dossier change: note that overnight v2 produced no new keep, preserved `befa711 / 1.378980`, and demonstrated that the next search should wait for a fresh quiet-regime re-baseline after runtime stability is re-established
+- Proposed AGENTS or skill change: none
+- Confidence: medium-high

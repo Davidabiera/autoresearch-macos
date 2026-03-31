@@ -20,3 +20,13 @@ d883544+beta1_084_beta2_094	1.386792	0.0	discard	lower adam beta1 to 0.84 with b
 bff1306	1.389555	0.0	discard	shorten warmdown ratio to 0.49
 d98dbf4	1.402777	0.0	discard	lower embedding lr to 0.59
 7c82ce7	1.411985	0.0	discard	lower final lr frac to 0.04
+5cf0c82	1.392497	0.0	discard	repeat current frontier under quiet overnight regime i
+783061c	1.392336	0.0	discard	repeat current frontier under quiet overnight regime j
+1be359d	1.391057	0.0	discard	retest lower matrix lr to 0.0445 under quiet overnight regime
+babb5a4	0.000000	0.0	crash	repeat current frontier under quiet overnight regime k
+ed2cf29	0.000000	0.0	crash	retest lower final lr frac to 0.0375 under quiet overnight regime
+03ef29b	0.000000	0.0	crash	repeat current frontier under quiet overnight regime l
+a520b64	0.000000	0.0	crash	retest shorten warmdown ratio to 0.49 under quiet overnight regime
+3f007e0	0.000000	0.0	crash	retest lower scalar lr to 0.49 under quiet overnight regime
+8dfb907	0.000000	0.0	crash	repeat current frontier under quiet overnight regime m
+dcc6310	0.000000	0.0	crash	retest lower embedding lr to 0.59 under quiet overnight regime
