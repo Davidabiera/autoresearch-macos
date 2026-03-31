@@ -357,7 +357,7 @@ class AutoresearchToolTests(unittest.TestCase):
         plan = {
             "best_commit": "5b486fb",
             "best_val": 1.386688,
-            "execution_root": "/private/tmp/autoresearch-execution-baseline",
+            "execution_root": str(WORKSPACE_ROOT / "worktrees" / "execution-baseline-mar10"),
         }
         stage = {
             "id": "frontier_fixed_step_same_session",
@@ -408,6 +408,41 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(env["trust_state"], "untrusted")
         self.assertIsNone(env["next_stage"])
         self.assertIn("cold-session", env["search_blocked_reason"])
+
+    def test_environment_status_prefers_orchestrator_backend_stage_over_stale_finished_active_run(self) -> None:
+        context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        active_run = {
+            "finished": True,
+            "stage_id": "frontier_fixed_step_same_session",
+            "session_kind": "repeatability",
+            "queue_path": str(CONTROL_ROOT / "queues" / "mar10_frontier_fixed_step_same_session.jsonl"),
+        }
+        active_state = {
+            "completed": [
+                {
+                    "id": "frontier_repeat_clean_c",
+                    "status_class": "early-step-stall",
+                    "num_steps": 11,
+                }
+            ]
+        }
+        orchestrator_state = {
+            "completed_stages": [
+                {
+                    "stage_id": "frontier_fixed_step_same_session",
+                    "passed": True,
+                    "reason": "frontier isolation passed; baseline repeats are clean and close to the canonical anchor",
+                    "runtime_forensics_bundle": "/tmp/fixed-step-bundle",
+                }
+            ]
+        }
+        env = environment_status(context, active_run, active_state, [], orchestrator_state)
+        self.assertTrue(env["latest_backend_isolation"]["passed"])
+        self.assertEqual(env["next_stage"], "frontier_fixed_step_rebooted")
+        self.assertEqual(
+            env["search_blocked_reason"],
+            "rebooted dedicated-session fixed-step isolation is still required before repeatability can reopen",
+        )
 
 
 if __name__ == "__main__":

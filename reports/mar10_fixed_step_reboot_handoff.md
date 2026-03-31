@@ -27,7 +27,7 @@ After reboot:
 3. run:
 
 ```bash
-/tmp/autoresearch-reliability/scripts/run_mar10_fixed_step_post_reboot.sh
+/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/scripts/run_mar10_fixed_step_post_reboot.sh
 ```
 
 What that launcher does:
@@ -63,7 +63,7 @@ Decision ladder:
 Control surface:
 
 ```bash
-python3 /tmp/autoresearch-reliability/scripts/session_status.py --branch autoresearch/mar10 --target-root /Users/davidabiera/Projects/team/autoresearch-macos --control-root /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control --format md
+python3 /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/scripts/session_status.py --branch autoresearch/mar10 --target-root /Users/davidabiera/Projects/team/autoresearch-macos --control-root /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control --format md
 ```
 
 Checkpointed logic:

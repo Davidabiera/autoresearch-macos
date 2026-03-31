@@ -30,7 +30,7 @@ Runner defaults:
 
 Launch helper:
 
-- `/tmp/autoresearch-reliability/scripts/run_mar10_dedicated_repeatability.sh`
+- `/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/scripts/run_mar10_dedicated_repeatability.sh`
 
 ## Queues
 

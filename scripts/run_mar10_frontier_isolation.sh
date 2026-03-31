@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=/Users/davidabiera/Projects/team/autoresearch-macos
-RUN_ROOT=/private/tmp/autoresearch-frontier-isolation
+RUN_ROOT=$REPO_ROOT/worktrees/frontier-isolation-mar10
 RUN_BRANCH=codex/frontier-isolation-mar10
 BASE_BRANCH=codex/execution-baseline-mar10
 CONTROL_ROOT=/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control

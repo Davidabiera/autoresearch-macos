@@ -25,6 +25,8 @@ from autoresearch_lib import (
 )
 from frontier_status import build_payload as build_frontier_payload
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+
 
 def load_active_state(paths: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     active_run = load_json(Path(paths["active_run"]))
@@ -142,19 +144,19 @@ def fixed_step_same_boot_replay_queue_path(context: dict[str, Any]) -> Path:
 
 
 def fixed_step_same_session_launcher() -> str:
-    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_frontier_fixed_step_same_session.sh"
+    return str(SCRIPT_DIR / "run_mar10_frontier_fixed_step_same_session.sh")
 
 
 def fixed_step_rebooted_launcher() -> str:
-    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_frontier_fixed_step_rebooted.sh"
+    return str(SCRIPT_DIR / "run_mar10_frontier_fixed_step_rebooted.sh")
 
 
 def fixed_step_post_reboot_launcher() -> str:
-    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_fixed_step_post_reboot.sh"
+    return str(SCRIPT_DIR / "run_mar10_fixed_step_post_reboot.sh")
 
 
 def fixed_step_repeatability_launcher() -> str:
-    return "/private/tmp/autoresearch-reliability/scripts/run_mar10_repeatability_fixed_step.sh"
+    return str(SCRIPT_DIR / "run_mar10_repeatability_fixed_step.sh")
 
 
 def current_repeatability_results(
@@ -236,8 +238,12 @@ def environment_status(
     orchestrator_state: dict[str, Any] | None,
 ) -> dict[str, Any]:
     finished_active = finished_active_stage_summary(context, active_run, active_state, repeatability_results)
-    latest_backend = finished_active if finished_active and finished_active["role"] == "backend_isolation" else latest_completed_orchestrator_stage(orchestrator_state, "backend_isolation")
-    latest_repeat = finished_active if finished_active and finished_active["role"] == "repeatability" else latest_completed_orchestrator_stage(orchestrator_state, "repeatability")
+    latest_backend = latest_completed_orchestrator_stage(orchestrator_state, "backend_isolation")
+    latest_repeat = latest_completed_orchestrator_stage(orchestrator_state, "repeatability")
+    if not latest_backend and finished_active and finished_active["role"] == "backend_isolation":
+        latest_backend = finished_active
+    if not latest_repeat and finished_active and finished_active["role"] == "repeatability":
+        latest_repeat = finished_active
     state = "untrusted"
     blocked_reason: str | None = None
     next_stage: str | None = None
