@@ -23,6 +23,7 @@ from session_status import (  # noqa: E402
     environment_status,
     frontier_isolation_decision,
     frontier_soak_decision,
+    invalid_reboot_launch_orchestration,
     latest_completed_orchestrator_stage,
     repeatability_branching_decision,
 )
@@ -388,7 +389,7 @@ class AutoresearchToolTests(unittest.TestCase):
         context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
         active_run = {"finished": False, "stage_id": "dedicated_repeatability_fixed_step"}
         orchestrator_state = {"completed_stages": [{"stage_id": "frontier_fixed_step_rebooted", "passed": True, "reason": "ok"}]}
-        env = environment_status(context, active_run, None, [], orchestrator_state)
+        env = environment_status(context, active_run, None, [], orchestrator_state, False, False, {"invalid_launch_orchestration": False})
         self.assertEqual(env["trust_state"], "conditionally recovered")
         self.assertEqual(env["next_stage"], "dedicated_repeatability_fixed_step")
         self.assertEqual(env["search_blocked_reason"], "fixed-step dedicated repeatability is in progress")
@@ -404,7 +405,7 @@ class AutoresearchToolTests(unittest.TestCase):
                 }
             ]
         }
-        env = environment_status(context, None, None, [], orchestrator_state)
+        env = environment_status(context, None, None, [], orchestrator_state, False, False, {"invalid_launch_orchestration": False})
         self.assertEqual(env["trust_state"], "untrusted")
         self.assertIsNone(env["next_stage"])
         self.assertIn("cold-session", env["search_blocked_reason"])
@@ -436,13 +437,66 @@ class AutoresearchToolTests(unittest.TestCase):
                 }
             ]
         }
-        env = environment_status(context, active_run, active_state, [], orchestrator_state)
+        env = environment_status(context, active_run, active_state, [], orchestrator_state, False, False, {"invalid_launch_orchestration": False})
         self.assertTrue(env["latest_backend_isolation"]["passed"])
         self.assertEqual(env["next_stage"], "frontier_fixed_step_rebooted")
         self.assertEqual(
             env["search_blocked_reason"],
             "rebooted dedicated-session fixed-step isolation is still required before repeatability can reopen",
         )
+
+    def test_invalid_reboot_launch_orchestration_when_stage_started_before_current_boot(self) -> None:
+        active_run = {
+            "stage_id": "frontier_fixed_step_rebooted",
+            "started_at": 1000.0,
+        }
+        self.assertTrue(
+            invalid_reboot_launch_orchestration(
+                active_run,
+                None,
+                False,
+                None,
+                False,
+                1001,
+            )
+        )
+
+    def test_invalid_reboot_launch_orchestration_falls_back_to_interrupted_empty_attempt(self) -> None:
+        active_run = {
+            "stage_id": "frontier_fixed_step_rebooted",
+            "started_at": 1000.0,
+        }
+        active_state = {"attempted": 0, "completed": []}
+        orchestrator_state = {"completed_stages": []}
+        self.assertTrue(
+            invalid_reboot_launch_orchestration(
+                active_run,
+                active_state,
+                True,
+                orchestrator_state,
+                False,
+                None,
+            )
+        )
+
+    def test_environment_status_reports_invalid_reboot_launch_orchestration(self) -> None:
+        context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        active_run = {"finished": False, "stage_id": "frontier_fixed_step_rebooted"}
+        active_state = {"attempted": 0, "completed": []}
+        orchestrator_state = {"completed_stages": []}
+        env = environment_status(
+            context,
+            active_run,
+            active_state,
+            [],
+            orchestrator_state,
+            True,
+            True,
+            {"invalid_launch_orchestration": True},
+        )
+        self.assertEqual(env["trust_state"], "untrusted")
+        self.assertEqual(env["next_stage"], "frontier_fixed_step_rebooted")
+        self.assertIn("launch failed before any informative attempt", env["search_blocked_reason"])
 
 
 if __name__ == "__main__":

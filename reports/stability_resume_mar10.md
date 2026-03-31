@@ -19,6 +19,9 @@ Before the next proof run:
 4. close Messages
 5. avoid active desktop use during the run
 6. run only from a clean disposable worktree rooted at the execution baseline
+7. write the reboot LaunchAgent to disk first with `/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/scripts/install_mar10_fixed_step_post_reboot_agent.sh`
+8. the installer arms the current boot epoch; same-boot auto-load must only log and wait
+9. do not manually `bootstrap` the LaunchAgent before reboot; it must fire only after login
 
 Runner defaults:
 

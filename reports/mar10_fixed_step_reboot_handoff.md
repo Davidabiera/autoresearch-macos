@@ -6,6 +6,8 @@ Current state:
 - search remains blocked
 - next gate is rebooted dedicated-session fixed-step isolation
 - if that passes, fixed-step dedicated repeatability runs automatically from the same launcher
+- the latest reboot attempt was invalid launch orchestration, not a frontier result
+- the pre-reboot manual load path fired the one-shot wrapper before reboot, deleted the plist, and left no real post-reboot stage execution
 
 Canonical evidence:
 
@@ -20,21 +22,39 @@ Why reboot is still required:
 - the next variable under test is fresh session state, not app state
 - quitting Codex or updating Codex is not equivalent to resetting OS-level session state, MPS/Metal state, and background session accumulation
 
-After reboot:
+Before reboot:
 
 1. keep the desktop quiet
-2. avoid opening extra apps
-3. run:
+2. write the one-shot LaunchAgent to disk only:
 
 ```bash
-/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/scripts/run_mar10_fixed_step_post_reboot.sh
+/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/scripts/install_mar10_fixed_step_post_reboot_agent.sh
 ```
 
-What that launcher does:
+3. the installer records the current boot epoch; if launchd loads the agent in the same boot, the wrapper logs and exits without consuming itself
+4. do not manually `bootstrap` or otherwise load the LaunchAgent
+5. reboot the Mac
+6. avoid opening extra apps after login
+
+What the post-reboot launcher does:
 
 1. rebooted fixed-step frontier isolation
 2. fixed-step dedicated repeatability, but only if rebooted fixed-step isolation passes
 3. if rebooted fixed-step isolation fails, it now runs a same-boot frontier-only replay to separate cold-session effects from persistent runtime drift
+
+Review checks for the next attempt:
+
+1. before reboot:
+   - plist exists at `~/Library/LaunchAgents/com.codex.mar10-fixed-step-post-reboot.plist`
+   - arm state exists at `/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/reliability/state/mar10_fixed_step_post_reboot_arm.env`
+   - plist points at the repo-local once wrapper
+   - no active `mar10` orchestrator or repeatability process is live
+2. after reboot/login:
+   - launch log is non-empty and newly timestamped
+   - launch log shows a boot epoch newer than the armed boot epoch
+   - `session_status.py` shows fresh timestamps rather than stale interrupted-only state
+   - `attempted > 0` or a completed stage appears
+   - a fresh runtime-forensics bundle is created
 
 Decision ladder:
 
