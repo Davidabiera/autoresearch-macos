@@ -2,7 +2,7 @@
   "best_commit": "5b486fb",
   "best_val": 1.386688,
   "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
-  "execution_root": "/private/tmp/autoresearch-execution-baseline",
+  "execution_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-baseline-mar10",
   "max_stage_chain": {
     "overnight": 1,
     "tonight": 1
@@ -30,5 +30,5 @@
     }
   ],
   "tag": "mar10",
-  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /private/tmp/autoresearch-execution-baseline/train.py"
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-baseline-mar10/train.py"
 }
