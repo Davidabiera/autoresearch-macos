@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -17,6 +18,7 @@ from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import reset_target_commit, terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
+import session_status as session_status_mod  # noqa: E402
 from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers, stage_should_advance  # noqa: E402
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
@@ -25,6 +27,7 @@ from session_status import (  # noqa: E402
     frontier_soak_decision,
     invalid_reboot_launch_orchestration,
     latest_completed_orchestrator_stage,
+    read_post_reboot_arm_state,
     repeatability_branching_decision,
 )
 
@@ -497,6 +500,19 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(env["trust_state"], "untrusted")
         self.assertEqual(env["next_stage"], "frontier_fixed_step_rebooted")
         self.assertIn("launch failed before any informative attempt", env["search_blocked_reason"])
+
+    def test_read_post_reboot_arm_state_preserves_machine_safe_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            arm_state = Path(tmpdir) / "mar10_fixed_step_post_reboot_arm.env"
+            arm_state.write_text(
+                "ARMED_BOOT_EPOCH=1774993620\n"
+                "ARMED_AT_ISO=2026-03-31T15:05:12-0700\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(session_status_mod, "POST_REBOOT_ARM_STATE", arm_state):
+                payload = read_post_reboot_arm_state()
+        self.assertEqual(payload["ARMED_BOOT_EPOCH"], "1774993620")
+        self.assertEqual(payload["ARMED_AT_ISO"], "2026-03-31T15:05:12-0700")
 
 
 if __name__ == "__main__":
