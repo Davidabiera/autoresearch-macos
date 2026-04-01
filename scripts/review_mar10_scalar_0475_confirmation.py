@@ -17,22 +17,22 @@ from autoresearch_lib import (
 
 
 DEFAULT_EXECUTION_ROOT = Path(
-    "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar"
+    "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar-confirmation"
 )
-DEFAULT_STATE_PATH = DEFAULT_EXECUTION_ROOT / "state" / "overnight_execution-weight-decay-022-scalar.json"
-DEFAULT_REPORT_PATH = DEFAULT_EXECUTION_ROOT / "reports" / "overnight_execution-weight-decay-022-scalar.md"
-DEFAULT_LOG_ROOT = DEFAULT_EXECUTION_ROOT / "logs" / "overnight" / "execution-weight-decay-022-scalar"
+DEFAULT_STATE_PATH = DEFAULT_EXECUTION_ROOT / "state" / "overnight_execution-weight-decay-022-scalar-confirmation.json"
+DEFAULT_REPORT_PATH = DEFAULT_EXECUTION_ROOT / "reports" / "overnight_execution-weight-decay-022-scalar-confirmation.md"
+DEFAULT_LOG_ROOT = (
+    DEFAULT_EXECUTION_ROOT / "logs" / "overnight" / "execution-weight-decay-022-scalar-confirmation"
+)
 BASELINE_IDS = (
-    "candidate_weight_decay_022_repeat_e",
-    "candidate_weight_decay_022_repeat_f",
+    "candidate_weight_decay_022_repeat_g",
+    "candidate_weight_decay_022_repeat_h",
 )
-SCALAR_IDS = (
-    "scalar_lr_04875_on_weight_decay_022",
-    "scalar_lr_048125_on_weight_decay_022",
-    "scalar_lr_0475_on_weight_decay_022",
-    "scalar_lr_046875_on_weight_decay_022",
+CANDIDATE_IDS = (
+    "scalar_lr_0475_confirmation_c",
+    "scalar_lr_0475_confirmation_d",
 )
-EXPECTED_IDS = BASELINE_IDS[:1] + SCALAR_IDS + BASELINE_IDS[1:]
+EXPECTED_IDS = (BASELINE_IDS[0], CANDIDATE_IDS[0], CANDIDATE_IDS[1], BASELINE_IDS[1])
 
 
 class ReviewError(RuntimeError):
@@ -40,7 +40,7 @@ class ReviewError(RuntimeError):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Review the mar10 scalar candidate bracket overnight run.")
+    parser = argparse.ArgumentParser(description="Review the mar10 scalar 0.475 confirmation run.")
     parser.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     parser.add_argument("--report", default=str(DEFAULT_REPORT_PATH))
     parser.add_argument("--log-root", default=str(DEFAULT_LOG_ROOT))
@@ -84,7 +84,7 @@ def _absolute_log_path(item: dict[str, Any], log_root: Path) -> Path | None:
     return log_root.parents[2] / path
 
 
-def evaluate_scalar_candidate_bracket(
+def evaluate_scalar_0475_confirmation(
     state: dict[str, Any],
     report_path: Path,
     log_root: Path,
@@ -113,16 +113,16 @@ def evaluate_scalar_candidate_bracket(
     operational_issues: list[str] = []
     if attempted != len(EXPECTED_IDS):
         operational_issues.append(f"attempted={attempted} expected={len(EXPECTED_IDS)}")
-    if stopped_reason not in {"queue exhausted", "max_experiments reached (6)"}:
+    if stopped_reason not in {"queue exhausted", "max_experiments reached (4)"}:
         operational_issues.append(f"unexpected stop reason: {stopped_reason}")
     if missing_ids:
         operational_issues.append(f"missing completed ids: {', '.join(missing_ids)}")
     if not order_matches:
-        operational_issues.append("completed item order does not match expected bracket order")
+        operational_issues.append("completed item order does not match expected confirmation order")
 
     item_details: list[dict[str, Any]] = []
     baseline_values: dict[str, float] = {}
-    scalar_rows: list[dict[str, Any]] = []
+    candidate_values: dict[str, float] = {}
 
     for item_id in EXPECTED_IDS:
         item = _require_item(completed_by_id, item_id)
@@ -150,11 +150,17 @@ def evaluate_scalar_candidate_bracket(
         value = item.get("val_bpb")
         if value is not None and item_id in BASELINE_IDS:
             baseline_values[item_id] = float(value)
+        if value is not None and item_id in CANDIDATE_IDS:
+            candidate_values[item_id] = float(value)
 
     classification = "stage_instability" if operational_issues else None
     baseline_mean = None
     baseline_spread = None
+    candidate_mean = None
+    candidate_spread = None
+    delta = None
     baseline_verdict = "not evaluated"
+    candidate_verdict = "not evaluated"
     next_day_action = "none"
 
     if classification is None:
@@ -175,42 +181,35 @@ def evaluate_scalar_candidate_bracket(
                     f"baseline bracket is stable: mean={baseline_mean:.6f}, spread={baseline_spread:.6f}"
                 )
 
-    best_scalar: dict[str, Any] | None = None
-    if baseline_mean is not None:
-        for item_id in SCALAR_IDS:
-            item = _require_item(completed_by_id, item_id)
-            value = item.get("val_bpb")
-            if value is None:
-                delta = None
-            else:
-                delta = baseline_mean - float(value)
-                scalar_rows.append(
-                    {
-                        "id": item_id,
-                        "val_bpb": float(value),
-                        "delta": delta,
-                        "status": item.get("status"),
-                        "status_class": item.get("status_class"),
-                        "clean": _is_clean(item)[0],
-                        "log_path": artifacts["logs"].get(item_id),
-                    }
-                )
-                if _is_clean(item)[0] and (best_scalar is None or float(delta) > float(best_scalar["delta"])):
-                    best_scalar = scalar_rows[-1]
-
     if classification is None:
-        if best_scalar is None:
-            classification = "scalar_closed"
-            next_day_action = "close scalar and retain plain `WEIGHT_DECAY=0.22` as the lead"
-        elif float(best_scalar["delta"]) > MATERIAL_WIN_THRESHOLD:
-            classification = "scalar_promoted"
-            next_day_action = (
-                f"promote `{best_scalar['id']}` as the single next-day scalar confirmation target"
-            )
-        elif float(best_scalar["delta"]) > 0.0:
+        missing_candidates = [item_id for item_id in CANDIDATE_IDS if item_id not in candidate_values]
+        if missing_candidates:
+            classification = "stage_instability"
+            candidate_verdict = f"missing candidate values: {', '.join(missing_candidates)}"
+        else:
+            candidate_mean = (candidate_values[CANDIDATE_IDS[0]] + candidate_values[CANDIDATE_IDS[1]]) / 2.0
+            candidate_spread = abs(candidate_values[CANDIDATE_IDS[0]] - candidate_values[CANDIDATE_IDS[1]])
+            if candidate_spread > REPEATABILITY_SPREAD_THRESHOLD:
+                classification = "inconclusive_drift"
+                candidate_verdict = (
+                    f"candidate spread {candidate_spread:.6f} exceeded {REPEATABILITY_SPREAD_THRESHOLD:.6f}"
+                )
+            else:
+                candidate_verdict = (
+                    f"candidate repeats are stable: mean={candidate_mean:.6f}, spread={candidate_spread:.6f}"
+                )
+
+    if baseline_mean is not None and candidate_mean is not None:
+        delta = baseline_mean - candidate_mean
+
+    if classification is None and delta is not None:
+        if delta > MATERIAL_WIN_THRESHOLD:
+            classification = "scalar_confirmed"
+            next_day_action = "confirm `SCALAR_LR=0.475` as the new lead on top of `WEIGHT_DECAY=0.22`"
+        elif delta > 0.0:
             classification = "scalar_promising"
             next_day_action = (
-                f"schedule one bounded confirmation for `{best_scalar['id']}` against the same candidate-root baseline"
+                "keep `SCALAR_LR=0.475` as promising but not confirmed; schedule one bounded follow-up confirmation"
             )
         else:
             classification = "scalar_closed"
@@ -222,12 +221,16 @@ def evaluate_scalar_candidate_bracket(
         "operational_verdict": operational_verdict,
         "operational_issues": operational_issues,
         "baseline_verdict": baseline_verdict,
-        "baseline_e": baseline_values.get(BASELINE_IDS[0]),
-        "baseline_f": baseline_values.get(BASELINE_IDS[1]),
+        "candidate_verdict": candidate_verdict,
+        "baseline_g": baseline_values.get(BASELINE_IDS[0]),
+        "baseline_h": baseline_values.get(BASELINE_IDS[1]),
         "baseline_mean": baseline_mean,
         "baseline_spread": baseline_spread,
-        "scalar_rows": scalar_rows,
-        "best_scalar": best_scalar,
+        "candidate_c": candidate_values.get(CANDIDATE_IDS[0]),
+        "candidate_d": candidate_values.get(CANDIDATE_IDS[1]),
+        "candidate_mean": candidate_mean,
+        "candidate_spread": candidate_spread,
+        "delta": delta,
         "next_day_action": next_day_action,
         "artifacts": artifacts,
         "item_details": item_details,
@@ -239,7 +242,7 @@ def evaluate_scalar_candidate_bracket(
 
 def render_markdown(review: dict[str, Any]) -> str:
     lines = [
-        "# mar10 Scalar Candidate Bracket Review",
+        "# mar10 Scalar 0.475 Confirmation Review",
         "",
         "## Artifacts",
         "",
@@ -263,27 +266,20 @@ def render_markdown(review: dict[str, Any]) -> str:
             "",
             "## Baseline Bracket Verdict",
             "",
-            f"- baseline `e`: `{format_float(review['baseline_e'])}`",
-            f"- baseline `f`: `{format_float(review['baseline_f'])}`",
+            f"- baseline `g`: `{format_float(review['baseline_g'])}`",
+            f"- baseline `h`: `{format_float(review['baseline_h'])}`",
             f"- `baseline_mean`: `{format_float(review['baseline_mean'])}`",
             f"- `baseline_spread`: `{format_float(review['baseline_spread'])}`",
             f"- verdict: `{review['baseline_verdict']}`",
             "",
-            "## Scalar Table",
+            "## Candidate Repeatability Verdict",
             "",
-        ]
-    )
-    if not review["scalar_rows"]:
-        lines.append("- none")
-    else:
-        for row in review["scalar_rows"]:
-            lines.append(
-                f"- `{row['id']}` `val_bpb={row['val_bpb']:.6f}` `delta={row['delta']:.6f}` "
-                f"`clean={str(row['clean']).lower()}` `status_class={row['status_class']}`"
-            )
-
-    lines.extend(
-        [
+            f"- candidate `c`: `{format_float(review['candidate_c'])}`",
+            f"- candidate `d`: `{format_float(review['candidate_d'])}`",
+            f"- `candidate_mean`: `{format_float(review['candidate_mean'])}`",
+            f"- `candidate_spread`: `{format_float(review['candidate_spread'])}`",
+            f"- `delta`: `{format_float(review['delta'])}`",
+            f"- verdict: `{review['candidate_verdict']}`",
             "",
             "## Final Classification",
             "",
@@ -327,7 +323,7 @@ def main() -> None:
     state = load_json(state_path)
     if not state:
         raise ReviewError(f"state file not found: {state_path}")
-    review = evaluate_scalar_candidate_bracket(state, report_path, log_root)
+    review = evaluate_scalar_0475_confirmation(state, report_path, log_root)
     if args.format == "json":
         print(json.dumps(review, indent=2, sort_keys=True))
         return
