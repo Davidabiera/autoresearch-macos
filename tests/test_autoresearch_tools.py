@@ -27,6 +27,7 @@ from review_mar10_scalar_0475_fixed_step_confirmation import evaluate_scalar_047
 from review_mar10_scalar_048125_fixed_step_confirmation import (  # noqa: E402
     evaluate_scalar_048125_fixed_step_confirmation,
 )
+from review_mar10_unembedding_fixed_step_bracket import evaluate_unembedding_fixed_step_bracket  # noqa: E402
 import session_status as session_status_mod  # noqa: E402
 from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers, stage_should_advance  # noqa: E402
 from session_status import (  # noqa: E402
@@ -1200,6 +1201,119 @@ class AutoresearchToolTests(unittest.TestCase):
         )
         self.assertEqual(review["classification"], "scalar_promising")
         self.assertAlmostEqual(review["delta"], 0.000125, places=6)
+
+    def test_unembedding_fixed_step_bracket_promotes_best_candidate(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-unembedding-followup.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_k",
+                    "status": "discard",
+                    "val_bpb": 1.385300,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/candidate_weight_decay_022_fixed_step_repeat_k.log",
+                },
+                {
+                    "id": "unembedding_lr_0047_on_weight_decay_022_fixed_step",
+                    "status": "keep",
+                    "val_bpb": 1.383900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/unembedding_lr_0047_on_weight_decay_022_fixed_step.log",
+                },
+                {
+                    "id": "unembedding_lr_0048_on_weight_decay_022_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.384700,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/unembedding_lr_0048_on_weight_decay_022_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_l",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/candidate_weight_decay_022_fixed_step_repeat_l.log",
+                },
+            ],
+        }
+        review = evaluate_unembedding_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-unembedding-followup/logs/overnight/execution-weight-decay-022-unembedding-followup"
+            ),
+        )
+        self.assertEqual(review["classification"], "unembedding_promoted")
+        self.assertAlmostEqual(review["baseline_mean"], 1.3852, places=6)
+        self.assertEqual(review["best_candidate"]["id"], "unembedding_lr_0047_on_weight_decay_022_fixed_step")
+        self.assertAlmostEqual(review["best_candidate"]["delta"], 0.0013, places=6)
+
+    def test_unembedding_fixed_step_bracket_closes_axis_when_candidates_regress(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-unembedding-followup.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_k",
+                    "status": "discard",
+                    "val_bpb": 1.385300,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/candidate_weight_decay_022_fixed_step_repeat_k.log",
+                },
+                {
+                    "id": "unembedding_lr_0047_on_weight_decay_022_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.386200,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/unembedding_lr_0047_on_weight_decay_022_fixed_step.log",
+                },
+                {
+                    "id": "unembedding_lr_0048_on_weight_decay_022_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.385900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/unembedding_lr_0048_on_weight_decay_022_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_l",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-unembedding-followup/candidate_weight_decay_022_fixed_step_repeat_l.log",
+                },
+            ],
+        }
+        review = evaluate_unembedding_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-unembedding-followup/logs/overnight/execution-weight-decay-022-unembedding-followup"
+            ),
+        )
+        self.assertEqual(review["classification"], "unembedding_closed")
 
     def test_read_post_reboot_arm_state_preserves_machine_safe_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
