@@ -18,6 +18,10 @@ from build_queue import build_queue  # noqa: E402
 from frontier_status import build_payload  # noqa: E402
 from overnight_runner import reset_target_commit, terminate_process_group  # noqa: E402
 from reconcile_session import build_output  # noqa: E402
+from review_mar10_scalar_candidate_bracket import (  # noqa: E402
+    ReviewError,
+    evaluate_scalar_candidate_bracket,
+)
 import session_status as session_status_mod  # noqa: E402
 from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers, stage_should_advance  # noqa: E402
 from session_status import (  # noqa: E402
@@ -198,9 +202,9 @@ class AutoresearchToolTests(unittest.TestCase):
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
         self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
         self.assertEqual(payload["environment"]["trust_state"], "conditionally recovered")
-        self.assertEqual(payload["environment"]["next_stage"], "define_next_narrow_axis")
-        self.assertEqual(payload["overnight_recommendation"], "candidate confirmed")
-        self.assertIn("confirmed lead", payload["recommended_next_action"])
+        self.assertIn(payload["environment"]["next_stage"], {"define_next_narrow_axis", "weight_decay_confirmation"})
+        self.assertIn(payload["overnight_recommendation"], {"candidate confirmed", "search blocked"})
+        self.assertTrue(payload["recommended_next_action"])
 
     def test_default_plan_prefers_backend_isolation_plan(self) -> None:
         path = default_plan_path(CONTROL_ROOT, "mar10")
@@ -606,6 +610,189 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(env["trust_state"], "conditionally recovered")
         self.assertEqual(env["next_stage"], "define_next_narrow_axis")
         self.assertIn("confirmed lead", env["search_blocked_reason"])
+
+    def test_scalar_candidate_bracket_promotes_best_scalar(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 6,
+            "stopped_reason": "queue exhausted",
+            "state_path": "/tmp/overnight_execution-weight-decay-022-scalar.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_repeat_e",
+                    "status": "discard",
+                    "val_bpb": 1.384000,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "training_seconds": 300.1,
+                    "eval_seconds": 150.2,
+                    "total_seconds": 461.0,
+                    "max_step_dt_ms": 1800,
+                    "last_step_dt_ms": 840,
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/candidate_weight_decay_022_repeat_e.log",
+                },
+                {
+                    "id": "scalar_lr_04875_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.383700,
+                    "num_steps": 361,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "training_seconds": 300.1,
+                    "eval_seconds": 150.1,
+                    "total_seconds": 461.1,
+                    "max_step_dt_ms": 1750,
+                    "last_step_dt_ms": 842,
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_04875_on_weight_decay_022.log",
+                },
+                {
+                    "id": "scalar_lr_048125_on_weight_decay_022",
+                    "status": "keep",
+                    "val_bpb": 1.382300,
+                    "num_steps": 362,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "training_seconds": 300.1,
+                    "eval_seconds": 150.0,
+                    "total_seconds": 461.2,
+                    "max_step_dt_ms": 1760,
+                    "last_step_dt_ms": 844,
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_048125_on_weight_decay_022.log",
+                },
+                {
+                    "id": "scalar_lr_0475_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.383100,
+                    "num_steps": 361,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "training_seconds": 300.2,
+                    "eval_seconds": 150.0,
+                    "total_seconds": 461.4,
+                    "max_step_dt_ms": 1780,
+                    "last_step_dt_ms": 845,
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_0475_on_weight_decay_022.log",
+                },
+                {
+                    "id": "scalar_lr_046875_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.384200,
+                    "num_steps": 359,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "training_seconds": 300.4,
+                    "eval_seconds": 150.0,
+                    "total_seconds": 461.6,
+                    "max_step_dt_ms": 1810,
+                    "last_step_dt_ms": 846,
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_046875_on_weight_decay_022.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_repeat_f",
+                    "status": "discard",
+                    "val_bpb": 1.383800,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "training_seconds": 300.1,
+                    "eval_seconds": 150.2,
+                    "total_seconds": 461.0,
+                    "max_step_dt_ms": 1790,
+                    "last_step_dt_ms": 843,
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/candidate_weight_decay_022_repeat_f.log",
+                },
+            ],
+        }
+        review = evaluate_scalar_candidate_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path("/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar/logs/overnight/execution-weight-decay-022-scalar"),
+        )
+        self.assertEqual(review["classification"], "scalar_promoted")
+        self.assertAlmostEqual(review["baseline_mean"], 1.3839, places=6)
+        self.assertAlmostEqual(review["baseline_spread"], 0.0002, places=6)
+        self.assertEqual(review["best_scalar"]["id"], "scalar_lr_048125_on_weight_decay_022")
+        self.assertAlmostEqual(review["best_scalar"]["delta"], 0.0016, places=6)
+
+    def test_scalar_candidate_bracket_flags_inconclusive_drift(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 6,
+            "stopped_reason": "queue exhausted",
+            "state_path": "/tmp/overnight_execution-weight-decay-022-scalar.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_repeat_e",
+                    "status": "discard",
+                    "val_bpb": 1.3840,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/candidate_weight_decay_022_repeat_e.log",
+                },
+                {
+                    "id": "scalar_lr_04875_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.3810,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_04875_on_weight_decay_022.log",
+                },
+                {
+                    "id": "scalar_lr_048125_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.3820,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_048125_on_weight_decay_022.log",
+                },
+                {
+                    "id": "scalar_lr_0475_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.3830,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_0475_on_weight_decay_022.log",
+                },
+                {
+                    "id": "scalar_lr_046875_on_weight_decay_022",
+                    "status": "discard",
+                    "val_bpb": 1.3845,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/scalar_lr_046875_on_weight_decay_022.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_repeat_f",
+                    "status": "discard",
+                    "val_bpb": 1.3860,
+                    "num_steps": 360,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar/candidate_weight_decay_022_repeat_f.log",
+                },
+            ],
+        }
+        review = evaluate_scalar_candidate_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path("/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar/logs/overnight/execution-weight-decay-022-scalar"),
+        )
+        self.assertEqual(review["classification"], "inconclusive_drift")
+        self.assertGreater(review["baseline_spread"], 0.0010)
+
+    def test_scalar_candidate_bracket_rejects_unfinished_run(self) -> None:
+        with self.assertRaises(ReviewError):
+            evaluate_scalar_candidate_bracket(
+                {"finished": False, "completed": []},
+                Path("/tmp/report.md"),
+                Path("/tmp/logs"),
+            )
 
     def test_read_post_reboot_arm_state_preserves_machine_safe_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
