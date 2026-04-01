@@ -9,7 +9,6 @@ from typing import Any
 from autoresearch_lib import (
     COMPLETION_FAILURE_CLASSES,
     MATERIAL_WIN_THRESHOLD,
-    MIN_CLEAN_NUM_STEPS,
     REPEATABILITY_SPREAD_THRESHOLD,
     STALL_FAILURE_CLASSES,
     load_json,
@@ -25,14 +24,15 @@ DEFAULT_LOG_ROOT = (
     DEFAULT_EXECUTION_ROOT / "logs" / "overnight" / "execution-weight-decay-022-scalar-confirmation"
 )
 BASELINE_IDS = (
-    "candidate_weight_decay_022_repeat_g",
-    "candidate_weight_decay_022_repeat_h",
+    "candidate_weight_decay_022_fixed_step_repeat_g",
+    "candidate_weight_decay_022_fixed_step_repeat_h",
 )
 CANDIDATE_IDS = (
-    "scalar_lr_0475_confirmation_c",
-    "scalar_lr_0475_confirmation_d",
+    "scalar_lr_0475_fixed_step_confirmation_c",
+    "scalar_lr_0475_fixed_step_confirmation_d",
 )
 EXPECTED_IDS = (BASELINE_IDS[0], CANDIDATE_IDS[0], CANDIDATE_IDS[1], BASELINE_IDS[1])
+REQUIRED_STEPS = 354
 
 
 class ReviewError(RuntimeError):
@@ -40,7 +40,7 @@ class ReviewError(RuntimeError):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Review the mar10 scalar 0.475 confirmation run.")
+    parser = argparse.ArgumentParser(description="Review the mar10 scalar 0.475 fixed-step confirmation run.")
     parser.add_argument("--state", default=str(DEFAULT_STATE_PATH))
     parser.add_argument("--report", default=str(DEFAULT_REPORT_PATH))
     parser.add_argument("--log-root", default=str(DEFAULT_LOG_ROOT))
@@ -52,6 +52,16 @@ def _require_item(completed_by_id: dict[str, dict[str, Any]], item_id: str) -> d
     if item_id not in completed_by_id:
         raise ReviewError(f"missing completed entry `{item_id}`")
     return completed_by_id[item_id]
+
+
+def _absolute_log_path(item: dict[str, Any], log_root: Path) -> Path | None:
+    value = item.get("log_path")
+    if not value:
+        return None
+    path = Path(str(value))
+    if path.is_absolute():
+        return path
+    return log_root.parents[2] / path
 
 
 def _is_clean(item: dict[str, Any]) -> tuple[bool, str | None]:
@@ -67,24 +77,14 @@ def _is_clean(item: dict[str, Any]) -> tuple[bool, str | None]:
     if status_class in COMPLETION_FAILURE_CLASSES:
         return False, status_class
     num_steps = item.get("num_steps")
-    if num_steps is not None and int(num_steps) < MIN_CLEAN_NUM_STEPS:
-        return False, "truncated-run"
+    if num_steps is None or int(num_steps) != REQUIRED_STEPS:
+        return False, f"step-mismatch:{num_steps}"
     if item.get("completion_phase") != "post_summary":
         return False, f"incomplete-completion:{item.get('completion_phase')}"
     return True, None
 
 
-def _absolute_log_path(item: dict[str, Any], log_root: Path) -> Path | None:
-    value = item.get("log_path")
-    if not value:
-        return None
-    path = Path(str(value))
-    if path.is_absolute():
-        return path
-    return log_root.parents[2] / path
-
-
-def evaluate_scalar_0475_confirmation(
+def evaluate_scalar_0475_fixed_step_confirmation(
     state: dict[str, Any],
     report_path: Path,
     log_root: Path,
@@ -115,10 +115,14 @@ def evaluate_scalar_0475_confirmation(
         operational_issues.append(f"attempted={attempted} expected={len(EXPECTED_IDS)}")
     if stopped_reason not in {"queue exhausted", "max_experiments reached (4)"}:
         operational_issues.append(f"unexpected stop reason: {stopped_reason}")
+    if int(state.get("trust_target_steps") or 0) != REQUIRED_STEPS:
+        operational_issues.append(
+            f"unexpected trust target steps: {state.get('trust_target_steps')} expected={REQUIRED_STEPS}"
+        )
     if missing_ids:
         operational_issues.append(f"missing completed ids: {', '.join(missing_ids)}")
     if not order_matches:
-        operational_issues.append("completed item order does not match expected confirmation order")
+        operational_issues.append("completed item order does not match expected fixed-step confirmation order")
 
     item_details: list[dict[str, Any]] = []
     baseline_values: dict[str, float] = {}
@@ -163,23 +167,24 @@ def evaluate_scalar_0475_confirmation(
     candidate_verdict = "not evaluated"
     next_day_action = "none"
 
-    if classification is None:
-        missing_baselines = [item_id for item_id in BASELINE_IDS if item_id not in baseline_values]
-        if missing_baselines:
+    missing_baselines = [item_id for item_id in BASELINE_IDS if item_id not in baseline_values]
+    if missing_baselines:
+        if classification is None:
             classification = "stage_instability"
-            baseline_verdict = f"missing baseline values: {', '.join(missing_baselines)}"
-        else:
-            baseline_mean = (baseline_values[BASELINE_IDS[0]] + baseline_values[BASELINE_IDS[1]]) / 2.0
-            baseline_spread = abs(baseline_values[BASELINE_IDS[0]] - baseline_values[BASELINE_IDS[1]])
-            if baseline_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        baseline_verdict = f"missing baseline values: {', '.join(missing_baselines)}"
+    else:
+        baseline_mean = (baseline_values[BASELINE_IDS[0]] + baseline_values[BASELINE_IDS[1]]) / 2.0
+        baseline_spread = abs(baseline_values[BASELINE_IDS[0]] - baseline_values[BASELINE_IDS[1]])
+        if baseline_spread > REPEATABILITY_SPREAD_THRESHOLD:
+            if classification is None:
                 classification = "inconclusive_drift"
-                baseline_verdict = (
-                    f"baseline spread {baseline_spread:.6f} exceeded {REPEATABILITY_SPREAD_THRESHOLD:.6f}"
-                )
-            else:
-                baseline_verdict = (
-                    f"baseline bracket is stable: mean={baseline_mean:.6f}, spread={baseline_spread:.6f}"
-                )
+            baseline_verdict = (
+                f"baseline spread {baseline_spread:.6f} exceeded {REPEATABILITY_SPREAD_THRESHOLD:.6f}"
+            )
+        else:
+            baseline_verdict = (
+                f"baseline bracket is stable: mean={baseline_mean:.6f}, spread={baseline_spread:.6f}"
+            )
 
     missing_candidates = [item_id for item_id in CANDIDATE_IDS if item_id not in candidate_values]
     if missing_candidates:
@@ -217,11 +222,10 @@ def evaluate_scalar_0475_confirmation(
             next_day_action = "close scalar and retain plain `WEIGHT_DECAY=0.22` as the lead"
     elif classification == "inconclusive_drift":
         next_day_action = (
-            "keep plain `WEIGHT_DECAY=0.22` as the confirmed lead and keep `SCALAR_LR=0.475` promising but unconfirmed; "
-            "rerun the bracket under fixed-step controls"
+            "keep plain `WEIGHT_DECAY=0.22` as the confirmed lead and keep `SCALAR_LR=0.475` promising but unconfirmed"
         )
     elif classification == "stage_instability":
-        next_day_action = "stabilize the scalar confirmation stage before judging `SCALAR_LR=0.475`"
+        next_day_action = "stabilize the fixed-step scalar confirmation stage before judging `SCALAR_LR=0.475`"
 
     operational_verdict = "pass" if not operational_issues else "fail"
     return {
@@ -245,12 +249,13 @@ def evaluate_scalar_0475_confirmation(
         "attempted": attempted,
         "stopped_reason": stopped_reason,
         "expected_ids": list(EXPECTED_IDS),
+        "required_steps": REQUIRED_STEPS,
     }
 
 
 def render_markdown(review: dict[str, Any]) -> str:
     lines = [
-        "# mar10 Scalar 0.475 Confirmation Review",
+        "# mar10 Scalar 0.475 Fixed-Step Confirmation Review",
         "",
         "## Artifacts",
         "",
@@ -263,6 +268,7 @@ def render_markdown(review: dict[str, Any]) -> str:
         f"- verdict: `{review['operational_verdict']}`",
         f"- attempted: `{review['attempted']}`",
         f"- stopped because: `{review['stopped_reason']}`",
+        f"- required steps: `{review['required_steps']}`",
     ]
     if review["operational_issues"]:
         lines.append(f"- issues: `{'; '.join(review['operational_issues'])}`")
@@ -331,7 +337,7 @@ def main() -> None:
     state = load_json(state_path)
     if not state:
         raise ReviewError(f"state file not found: {state_path}")
-    review = evaluate_scalar_0475_confirmation(state, report_path, log_root)
+    review = evaluate_scalar_0475_fixed_step_confirmation(state, report_path, log_root)
     if args.format == "json":
         print(json.dumps(review, indent=2, sort_keys=True))
         return
