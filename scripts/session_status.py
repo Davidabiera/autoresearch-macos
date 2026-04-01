@@ -12,6 +12,7 @@ from typing import Any
 from autoresearch_lib import (
     DEFAULT_CONTROL_ROOT,
     DEFAULT_TARGET_ROOT,
+    MATERIAL_WIN_THRESHOLD,
     artifact_paths,
     axis_from_item_id,
     best_nonkeep_by_axis,
@@ -25,6 +26,7 @@ from autoresearch_lib import (
     parse_repeatability_results,
     parse_step_progress,
     process_alive,
+    repeatability_failure_detail,
 )
 from frontier_status import build_payload as build_frontier_payload
 
@@ -303,6 +305,66 @@ def current_repeatability_results(
     return repeatability_results
 
 
+def evaluate_weight_decay_confirmation(items: list[dict[str, Any]]) -> dict[str, Any]:
+    failure = repeatability_failure_detail(items)
+    frontier_items = [
+        item for item in items if str(item.get("id") or "").startswith("frontier_repeat_confirmation")
+    ]
+    weight_decay_items = [
+        item for item in items if str(item.get("id") or "").startswith("weight_decay_repeat_022_confirmation")
+    ]
+    frontier_vals = [float(item["val_bpb"]) for item in frontier_items if item.get("val_bpb") is not None]
+    weight_decay_vals = [float(item["val_bpb"]) for item in weight_decay_items if item.get("val_bpb") is not None]
+    frontier_mean = sum(frontier_vals) / len(frontier_vals) if frontier_vals else None
+    weight_decay_mean = sum(weight_decay_vals) / len(weight_decay_vals) if weight_decay_vals else None
+    weight_decay_spread = max(weight_decay_vals) - min(weight_decay_vals) if len(weight_decay_vals) >= 2 else None
+    mean_improvement = (
+        frontier_mean - weight_decay_mean
+        if frontier_mean is not None and weight_decay_mean is not None
+        else None
+    )
+    result: dict[str, Any] = {
+        "passed": False,
+        "operationally_clean": False,
+        "confirmed_lead": False,
+        "weight_decay_better": False,
+        "frontier_count": len(frontier_vals),
+        "weight_decay_count": len(weight_decay_vals),
+        "frontier_mean": frontier_mean,
+        "weight_decay_mean": weight_decay_mean,
+        "weight_decay_spread": weight_decay_spread,
+        "mean_improvement": mean_improvement,
+        "next_stage": "define_next_narrow_axis",
+        "failure_class": failure["failure_class"] if failure else None,
+    }
+    if failure:
+        result["reason"] = failure["reason"]
+        return result
+    if len(frontier_vals) < 1 or len(weight_decay_vals) < 2:
+        result["failure_class"] = "insufficient-clean-repeats"
+        result["reason"] = "weight decay confirmation does not yet have enough completed results"
+        return result
+    result["passed"] = True
+    result["operationally_clean"] = True
+    result["weight_decay_better"] = bool(
+        frontier_mean is not None and weight_decay_mean is not None and weight_decay_mean < frontier_mean
+    )
+    if mean_improvement is not None and mean_improvement > MATERIAL_WIN_THRESHOLD:
+        result["confirmed_lead"] = True
+        result["reason"] = (
+            "bounded confirmation canary stayed clean and `WEIGHT_DECAY=0.22` remains materially ahead of frontier"
+        )
+        return result
+    if result["weight_decay_better"]:
+        result["reason"] = (
+            "bounded confirmation canary stayed clean and `WEIGHT_DECAY=0.22` remains ahead of frontier, "
+            "but the edge is below the material-win threshold"
+        )
+        return result
+    result["reason"] = "bounded confirmation canary stayed clean but `WEIGHT_DECAY=0.22` no longer beats frontier"
+    return result
+
+
 def queue_matches(context: dict[str, Any], queue_path: str | None, suffix: str) -> bool:
     if not queue_path:
         return False
@@ -348,6 +410,20 @@ def finished_active_stage_summary(
             "recommended_search_stage": evaluation.get("next_stage"),
             "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
         }
+    if stage_id == "weight_decay_confirmation" or queue_matches(context, queue_path, "weight_decay_confirmation"):
+        evaluation = evaluate_weight_decay_confirmation(session_results)
+        return {
+            "stage_id": stage_id or "weight_decay_confirmation",
+            "role": "confirmation",
+            "passed": bool(evaluation["passed"]),
+            "reason": evaluation["reason"],
+            "failure_class": evaluation.get("failure_class"),
+            "evaluation": evaluation,
+            "confirmed_lead": evaluation.get("confirmed_lead"),
+            "weight_decay_better": evaluation.get("weight_decay_better"),
+            "next_stage": evaluation.get("next_stage"),
+            "runtime_forensics_bundle": active_run.get("runtime_forensics_bundle"),
+        }
     return None
 
 
@@ -377,6 +453,7 @@ def environment_status(
     finished_active = finished_active_stage_summary(context, active_run, active_state, repeatability_results)
     latest_backend = latest_completed_orchestrator_stage(orchestrator_state, "backend_isolation")
     latest_repeat = latest_completed_orchestrator_stage(orchestrator_state, "repeatability")
+    latest_confirmation = finished_active if finished_active and finished_active["role"] == "confirmation" else None
     if not latest_backend and finished_active and finished_active["role"] == "backend_isolation":
         latest_backend = finished_active
     if not latest_repeat and finished_active and finished_active["role"] == "repeatability":
@@ -389,7 +466,31 @@ def environment_status(
     if latest_backend:
         bundle_path = latest_backend.get("runtime_forensics_bundle")
     latest_backend_stage_id = str(latest_backend.get("stage_id") or "") if latest_backend else ""
-    if post_reboot_handoff.get("invalid_launch_orchestration"):
+    if latest_confirmation and latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
+        state = "conditionally recovered"
+        next_stage = str(latest_confirmation.get("next_stage") or "define_next_narrow_axis")
+        if latest_confirmation.get("passed") and latest_confirmation.get("confirmed_lead"):
+            blocked_reason = (
+                "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead; "
+                "define the next narrow axis before reopening broader search"
+            )
+        elif latest_confirmation.get("passed"):
+            blocked_reason = (
+                "bounded canary resolved cleanly but did not fully confirm `WEIGHT_DECAY=0.22`; "
+                "keep the loop narrow and define the next adjacent axis deliberately"
+            )
+        else:
+            blocked_reason = (
+                f"bounded canary was operationally unstable: {latest_confirmation.get('reason')}; "
+                "keep broader search closed until stage stability is re-established"
+            )
+    elif latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
+        state = "conditionally recovered"
+        next_stage = str(latest_repeat.get("recommended_search_stage") or "day-2 canary")
+        blocked_reason = (
+            f"next-day canary earned: `{next_stage}`; broad search remains closed until the bounded canary resolves"
+        )
+    elif post_reboot_handoff.get("invalid_launch_orchestration"):
         state = "untrusted"
         blocked_reason = "rebooted dedicated-session launch failed before any informative attempt; repair the LaunchAgent handoff and rerun after reboot"
         next_stage = "frontier_fixed_step_rebooted"
@@ -414,9 +515,6 @@ def environment_status(
         state = "untrusted"
         blocked_reason = runner_error or str(latest_backend.get("reason"))
         next_stage = None
-    elif latest_backend and latest_backend.get("passed") and latest_repeat and latest_repeat.get("passed"):
-        state = "search eligible"
-        next_stage = str(latest_repeat.get("recommended_search_stage") or "day-2 canary")
     elif latest_backend and latest_backend.get("passed"):
         state = "conditionally recovered"
         next_stage = "dedicated_repeatability"
@@ -442,6 +540,7 @@ def environment_status(
         "trust_state": state,
         "latest_backend_isolation": latest_backend,
         "latest_repeatability_stage": latest_repeat,
+        "latest_confirmation_stage": latest_confirmation,
         "search_blocked_reason": blocked_reason,
         "next_stage": next_stage,
         "bundle_path": bundle_path,
@@ -498,6 +597,13 @@ def overnight_recommendation(
     if blockers:
         return "search blocked"
     if active_run and not bool(active_run.get("finished")):
+        return "search blocked"
+    latest_confirmation = environment.get("latest_confirmation_stage")
+    if latest_confirmation and latest_confirmation.get("passed") and latest_confirmation.get("confirmed_lead"):
+        return "candidate confirmed"
+    if latest_confirmation and latest_confirmation.get("passed"):
+        return "candidate still narrow"
+    if latest_confirmation:
         return "search blocked"
     latest_repeat = environment.get("latest_repeatability_stage")
     latest_backend = environment.get("latest_backend_isolation")
@@ -594,6 +700,7 @@ def recommended_next_action(
 ) -> str:
     latest_backend = environment.get("latest_backend_isolation")
     latest_repeat = environment.get("latest_repeatability_stage")
+    latest_confirmation = environment.get("latest_confirmation_stage")
     runner_error = str(post_reboot_handoff.get("runner_error") or "")
     if blockers:
         return "do not launch autonomous stages until blockers are cleared: " + "; ".join(blockers)
@@ -612,6 +719,26 @@ def recommended_next_action(
         return "previous orchestrator session is interrupted; inspect its state and relaunch through the orchestrator"
     if active_run_is_interrupted and not latest_backend:
         return "previous stage runner is interrupted; inspect its state and relaunch through the orchestrator"
+    if latest_confirmation:
+        if not latest_confirmation.get("passed"):
+            return (
+                "bounded confirmation canary was operationally unstable; keep broad search closed and stabilize the stage "
+                f"before reopening the loop: {latest_confirmation.get('reason')}"
+            )
+        if latest_confirmation.get("confirmed_lead"):
+            return (
+                "bounded confirmation canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead. "
+                "Keep broad search closed and define the next narrow axis around the confirmed candidate."
+            )
+        if latest_confirmation.get("weight_decay_better"):
+            return (
+                "bounded confirmation canary resolved cleanly; `WEIGHT_DECAY=0.22` still beats frontier, "
+                "but the edge is below the material-win bar. Keep the loop narrow and define one adjacent-axis check."
+            )
+        return (
+            "bounded confirmation canary resolved cleanly, but `WEIGHT_DECAY=0.22` did not stay ahead of frontier. "
+            "Keep broad search closed and choose the next axis deliberately."
+        )
     if latest_repeat and latest_repeat.get("passed") and latest_backend and latest_backend.get("passed"):
         recommended_stage = latest_repeat.get("recommended_search_stage") or environment.get("next_stage") or "day-2 canary"
         return (

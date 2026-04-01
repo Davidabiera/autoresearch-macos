@@ -23,6 +23,7 @@ from session_orchestrator import build_stage_command, next_stage_from_summary, p
 from session_status import (  # noqa: E402
     build_payload as build_session_payload,
     environment_status,
+    evaluate_weight_decay_confirmation,
     frontier_isolation_decision,
     frontier_soak_decision,
     invalid_reboot_launch_orchestration,
@@ -196,8 +197,10 @@ class AutoresearchToolTests(unittest.TestCase):
     def test_session_status_exposes_frontier_and_next_action(self) -> None:
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
         self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
-        self.assertEqual(payload["environment"]["trust_state"], "untrusted")
-        self.assertTrue(payload["recommended_next_action"])
+        self.assertEqual(payload["environment"]["trust_state"], "conditionally recovered")
+        self.assertEqual(payload["environment"]["next_stage"], "define_next_narrow_axis")
+        self.assertEqual(payload["overnight_recommendation"], "candidate confirmed")
+        self.assertIn("confirmed lead", payload["recommended_next_action"])
 
     def test_default_plan_prefers_backend_isolation_plan(self) -> None:
         path = default_plan_path(CONTROL_ROOT, "mar10")
@@ -519,6 +522,90 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(env["trust_state"], "untrusted")
         self.assertEqual(env["next_stage"], "frontier_fixed_step_rebooted")
         self.assertIn("launch failed before any informative attempt", env["search_blocked_reason"])
+
+    def test_environment_status_points_finished_trust_recovery_to_confirmation_canary(self) -> None:
+        context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        orchestrator_state = {
+            "completed_stages": [
+                {
+                    "stage_id": "frontier_fixed_step_rebooted",
+                    "passed": True,
+                    "reason": "frontier isolation passed; baseline repeats are clean and close to the canonical anchor",
+                },
+                {
+                    "stage_id": "dedicated_repeatability_fixed_step",
+                    "passed": True,
+                    "reason": "environment is stable and weight decay materially wins",
+                    "recommended_search_stage": "weight_decay_confirmation",
+                },
+            ]
+        }
+        env = environment_status(
+            context,
+            None,
+            None,
+            [],
+            orchestrator_state,
+            False,
+            False,
+            {"invalid_launch_orchestration": False},
+        )
+        self.assertEqual(env["trust_state"], "conditionally recovered")
+        self.assertEqual(env["next_stage"], "weight_decay_confirmation")
+        self.assertIn("next-day canary earned", env["search_blocked_reason"])
+
+    def test_weight_decay_confirmation_promotes_confirmed_lead(self) -> None:
+        evaluation = evaluate_weight_decay_confirmation(
+            [
+                {"id": "frontier_repeat_confirmation_c", "val_bpb": 1.384847, "status_class": "post-train-overrun", "num_steps": 357},
+                {"id": "weight_decay_repeat_022_confirmation_c", "val_bpb": 1.380148, "status_class": "post-train-overrun", "num_steps": 369},
+                {"id": "weight_decay_repeat_022_confirmation_d", "val_bpb": 1.384010, "status_class": "post-train-overrun", "num_steps": 360},
+            ]
+        )
+        self.assertTrue(evaluation["passed"])
+        self.assertTrue(evaluation["confirmed_lead"])
+        self.assertAlmostEqual(evaluation["mean_improvement"], 0.002768, places=6)
+        self.assertEqual(evaluation["next_stage"], "define_next_narrow_axis")
+
+    def test_environment_status_reports_finished_confirmation_stage(self) -> None:
+        context = {"current_best_val": 1.386688, "paths": {"control_root": str(CONTROL_ROOT)}, "tag": "mar10"}
+        active_run = {
+            "finished": True,
+            "session_kind": "repeatability",
+            "stage_id": "weight_decay_confirmation",
+            "queue_path": str(CONTROL_ROOT / "queues" / "mar10_weight_decay_confirmation.jsonl"),
+        }
+        active_state = {
+            "completed": [
+                {"id": "frontier_repeat_confirmation_c", "val_bpb": 1.384847, "status_class": "post-train-overrun", "num_steps": 357},
+                {"id": "weight_decay_repeat_022_confirmation_c", "val_bpb": 1.380148, "status_class": "post-train-overrun", "num_steps": 369},
+                {"id": "weight_decay_repeat_022_confirmation_d", "val_bpb": 1.384010, "status_class": "post-train-overrun", "num_steps": 360},
+            ]
+        }
+        orchestrator_state = {
+            "completed_stages": [
+                {"stage_id": "frontier_fixed_step_rebooted", "passed": True, "reason": "frontier isolation passed"},
+                {
+                    "stage_id": "dedicated_repeatability_fixed_step",
+                    "passed": True,
+                    "reason": "environment is stable and weight decay materially wins",
+                    "recommended_search_stage": "weight_decay_confirmation",
+                },
+            ]
+        }
+        env = environment_status(
+            context,
+            active_run,
+            active_state,
+            [],
+            orchestrator_state,
+            False,
+            False,
+            {"invalid_launch_orchestration": False},
+        )
+        self.assertEqual(env["trust_state"], "conditionally recovered")
+        self.assertEqual(env["next_stage"], "define_next_narrow_axis")
+        self.assertIn("confirmed lead", env["search_blocked_reason"])
 
     def test_read_post_reboot_arm_state_preserves_machine_safe_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

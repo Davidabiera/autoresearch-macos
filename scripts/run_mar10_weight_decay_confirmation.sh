@@ -17,10 +17,10 @@ exec python3 "$SCRIPT_DIR/overnight_runner.py" \
   --best-commit 5b486fb \
   --best-val 1.386688 \
   --queue /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_weight_decay_confirmation.jsonl \
-  --session-kind exploration \
+  --session-kind repeatability \
   --timeout-seconds 750 \
   --stall-abort-ms 30000 \
   --stall-abort-step-max 20 \
   --stall-abort-count 3 \
-  --max-experiments 2 \
+  --max-experiments 3 \
   "$@"
