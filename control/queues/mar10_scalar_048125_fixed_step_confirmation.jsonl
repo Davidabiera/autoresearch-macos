@@ -1,0 +1,4 @@
+{"assignments": {"SCALAR_LR": "0.5"}, "description": "repeat weight decay 0.22 fixed-step baseline i", "id": "candidate_weight_decay_022_fixed_step_repeat_i"}
+{"assignments": {}, "description": "repeat scalar lr 0.48125 fixed-step confirmation c", "id": "scalar_lr_048125_fixed_step_confirmation_c"}
+{"assignments": {}, "description": "repeat scalar lr 0.48125 fixed-step confirmation d", "id": "scalar_lr_048125_fixed_step_confirmation_d"}
+{"assignments": {"SCALAR_LR": "0.5"}, "description": "repeat weight decay 0.22 fixed-step baseline j", "id": "candidate_weight_decay_022_fixed_step_repeat_j"}

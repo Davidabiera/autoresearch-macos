@@ -1,0 +1,35 @@
+{
+  "best_commit": "a8337e1",
+  "best_val": 1.382803,
+  "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
+  "execution_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar-048125-confirmation",
+  "max_stage_chain": {
+    "overnight": 1,
+    "tonight": 1
+  },
+  "plan_id": "mar10_scalar_048125_fixed_step_confirmation",
+  "stages": [
+    {
+      "id": "scalar_048125_fixed_step_confirmation",
+      "kind": "repeatability",
+      "max_experiments": 4,
+      "on_failure": {
+        "action": "stop",
+        "reason": "scalar 0.48125 fixed-step confirmation stage instability"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "scalar 0.48125 fixed-step confirmation exhausted; morning review must compare candidate repeats against the same-run weight-decay baseline bracket"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_scalar_048125_fixed_step_confirmation.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "clean_stage",
+      "timeout_seconds": 750,
+      "trust_target_steps": 354
+    }
+  ],
+  "tag": "mar10",
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar-048125-confirmation/train.py"
+}
