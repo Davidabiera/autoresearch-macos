@@ -1,0 +1,35 @@
+{
+  "best_commit": "52769ae",
+  "best_val": 1.384010,
+  "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
+  "execution_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-unembedding-followup",
+  "max_stage_chain": {
+    "overnight": 1,
+    "tonight": 1
+  },
+  "plan_id": "mar10_unembedding_fixed_step_bracket",
+  "stages": [
+    {
+      "id": "unembedding_fixed_step_bracket",
+      "kind": "repeatability",
+      "max_experiments": 4,
+      "on_failure": {
+        "action": "stop",
+        "reason": "unembedding fixed-step bracket stage instability"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "unembedding fixed-step bracket exhausted; morning review must compare candidate runs against the same-run weight-decay baseline bracket"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_unembedding_fixed_step_bracket.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "clean_stage",
+      "timeout_seconds": 750,
+      "trust_target_steps": 354
+    }
+  ],
+  "tag": "mar10",
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-unembedding-followup/train.py"
+}
