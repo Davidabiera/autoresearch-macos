@@ -1,0 +1,6 @@
+{"assignments": {}, "description": "repeat confirmed weight decay 0.22 candidate baseline e", "id": "candidate_weight_decay_022_repeat_e"}
+{"assignments": {"SCALAR_LR": "0.4875"}, "description": "lower scalar lr to 0.4875 on weight decay 0.22 candidate", "id": "scalar_lr_04875_on_weight_decay_022"}
+{"assignments": {"SCALAR_LR": "0.48125"}, "description": "lower scalar lr to 0.48125 on weight decay 0.22 candidate", "id": "scalar_lr_048125_on_weight_decay_022"}
+{"assignments": {"SCALAR_LR": "0.475"}, "description": "lower scalar lr to 0.475 on weight decay 0.22 candidate", "id": "scalar_lr_0475_on_weight_decay_022"}
+{"assignments": {"SCALAR_LR": "0.46875"}, "description": "lower scalar lr to 0.46875 on weight decay 0.22 candidate", "id": "scalar_lr_046875_on_weight_decay_022"}
+{"assignments": {}, "description": "repeat confirmed weight decay 0.22 candidate baseline f", "id": "candidate_weight_decay_022_repeat_f"}

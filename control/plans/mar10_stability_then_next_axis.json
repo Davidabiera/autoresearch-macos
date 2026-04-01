@@ -28,8 +28,8 @@
     },
     {
       "id": "weight_decay_confirmation",
-      "kind": "exploration",
-      "max_experiments": 2,
+      "kind": "repeatability",
+      "max_experiments": 3,
       "on_failure": {
         "action": "stop",
         "reason": "stage 2 instability"

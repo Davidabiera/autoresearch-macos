@@ -1,0 +1,34 @@
+{
+  "best_commit": "52769ae",
+  "best_val": 1.38401,
+  "control_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control",
+  "execution_root": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar",
+  "max_stage_chain": {
+    "overnight": 1,
+    "tonight": 1
+  },
+  "plan_id": "mar10_candidate_root_scalar_bracket",
+  "stages": [
+    {
+      "id": "scalar_candidate_bracket",
+      "kind": "repeatability",
+      "max_experiments": 6,
+      "on_failure": {
+        "action": "stop",
+        "reason": "scalar candidate bracket stage instability"
+      },
+      "on_success": {
+        "action": "stop",
+        "reason": "overnight scalar candidate bracket exhausted; morning review must compare scalar runs against the same-run weight-decay baseline bracket"
+      },
+      "queue": "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/queues/mar10_scalar_candidate_bracket.jsonl",
+      "stall_abort_count": 3,
+      "stall_abort_ms": 30000,
+      "stall_abort_step_max": 20,
+      "success_rule": "clean_stage",
+      "timeout_seconds": 750
+    }
+  ],
+  "tag": "mar10",
+  "train_cmd": "/Users/davidabiera/Projects/team/autoresearch-macos/.venv/bin/python /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar/train.py"
+}
