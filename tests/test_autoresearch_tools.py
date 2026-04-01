@@ -24,6 +24,9 @@ from review_mar10_scalar_candidate_bracket import (  # noqa: E402
 )
 from review_mar10_scalar_0475_confirmation import evaluate_scalar_0475_confirmation  # noqa: E402
 from review_mar10_scalar_0475_fixed_step_confirmation import evaluate_scalar_0475_fixed_step_confirmation  # noqa: E402
+from review_mar10_scalar_048125_fixed_step_confirmation import (  # noqa: E402
+    evaluate_scalar_048125_fixed_step_confirmation,
+)
 import session_status as session_status_mod  # noqa: E402
 from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers, stage_should_advance  # noqa: E402
 from session_status import (  # noqa: E402
@@ -1082,6 +1085,121 @@ class AutoresearchToolTests(unittest.TestCase):
         )
         self.assertEqual(review["classification"], "stage_instability")
         self.assertIn("step-mismatch:353", ";".join(review["operational_issues"]))
+
+    def test_scalar_048125_fixed_step_confirmation_confirms_candidate(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-scalar-048125-confirmation.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_i",
+                    "status": "discard",
+                    "val_bpb": 1.384200,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/candidate_weight_decay_022_fixed_step_repeat_i.log",
+                },
+                {
+                    "id": "scalar_lr_048125_fixed_step_confirmation_c",
+                    "status": "keep",
+                    "val_bpb": 1.382500,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/scalar_lr_048125_fixed_step_confirmation_c.log",
+                },
+                {
+                    "id": "scalar_lr_048125_fixed_step_confirmation_d",
+                    "status": "keep",
+                    "val_bpb": 1.382800,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/scalar_lr_048125_fixed_step_confirmation_d.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_j",
+                    "status": "discard",
+                    "val_bpb": 1.384900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/candidate_weight_decay_022_fixed_step_repeat_j.log",
+                },
+            ],
+        }
+        review = evaluate_scalar_048125_fixed_step_confirmation(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar-048125-confirmation/logs/overnight/execution-weight-decay-022-scalar-048125-confirmation"
+            ),
+        )
+        self.assertEqual(review["classification"], "scalar_confirmed")
+        self.assertAlmostEqual(review["baseline_mean"], 1.38455, places=6)
+        self.assertAlmostEqual(review["candidate_mean"], 1.38265, places=6)
+        self.assertAlmostEqual(review["candidate_spread"], 0.0003, places=6)
+        self.assertAlmostEqual(review["delta"], 0.0019, places=6)
+
+    def test_scalar_048125_fixed_step_confirmation_marks_promising_when_subthreshold(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-scalar-048125-confirmation.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_i",
+                    "status": "discard",
+                    "val_bpb": 1.385200,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/candidate_weight_decay_022_fixed_step_repeat_i.log",
+                },
+                {
+                    "id": "scalar_lr_048125_fixed_step_confirmation_c",
+                    "status": "discard",
+                    "val_bpb": 1.385050,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/scalar_lr_048125_fixed_step_confirmation_c.log",
+                },
+                {
+                    "id": "scalar_lr_048125_fixed_step_confirmation_d",
+                    "status": "discard",
+                    "val_bpb": 1.385000,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/scalar_lr_048125_fixed_step_confirmation_d.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_j",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-scalar-048125-confirmation/candidate_weight_decay_022_fixed_step_repeat_j.log",
+                },
+            ],
+        }
+        review = evaluate_scalar_048125_fixed_step_confirmation(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar-048125-confirmation/logs/overnight/execution-weight-decay-022-scalar-048125-confirmation"
+            ),
+        )
+        self.assertEqual(review["classification"], "scalar_promising")
+        self.assertAlmostEqual(review["delta"], 0.000125, places=6)
 
     def test_read_post_reboot_arm_state_preserves_machine_safe_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
