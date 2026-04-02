@@ -28,6 +28,9 @@ from review_mar10_scalar_048125_fixed_step_confirmation import (  # noqa: E402
     evaluate_scalar_048125_fixed_step_confirmation,
 )
 from review_mar10_unembedding_fixed_step_bracket import evaluate_unembedding_fixed_step_bracket  # noqa: E402
+from review_mar10_weight_decay_ridge_fixed_step_bracket import (  # noqa: E402
+    evaluate_weight_decay_ridge_fixed_step_bracket,
+)
 import session_status as session_status_mod  # noqa: E402
 from session_orchestrator import build_stage_command, next_stage_from_summary, plan_preflight_blockers, stage_should_advance  # noqa: E402
 from session_status import (  # noqa: E402
@@ -1440,6 +1443,288 @@ class AutoresearchToolTests(unittest.TestCase):
             ),
         )
         self.assertEqual(review["classification"], "unembedding_closed")
+
+    def test_weight_decay_ridge_fixed_step_bracket_promotes_best_candidate(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-ridge.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_m",
+                    "status": "discard",
+                    "val_bpb": 1.385300,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_m.log",
+                },
+                {
+                    "id": "weight_decay_0218_fixed_step",
+                    "status": "keep",
+                    "val_bpb": 1.383900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_0218_fixed_step.log",
+                },
+                {
+                    "id": "weight_decay_02225_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.384700,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_02225_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_n",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_n.log",
+                },
+            ],
+        }
+        review = evaluate_weight_decay_ridge_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-ridge/logs/overnight/execution-weight-decay-022-ridge"
+            ),
+        )
+        self.assertEqual(review["classification"], "ridge_promoted")
+        self.assertAlmostEqual(review["baseline_mean"], 1.3852, places=6)
+        self.assertEqual(review["best_candidate"]["id"], "weight_decay_0218_fixed_step")
+        self.assertAlmostEqual(review["best_candidate"]["delta"], 0.0013, places=6)
+
+    def test_weight_decay_ridge_fixed_step_bracket_marks_promising_when_subthreshold(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-ridge.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_m",
+                    "status": "discard",
+                    "val_bpb": 1.385200,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_m.log",
+                },
+                {
+                    "id": "weight_decay_0218_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.385050,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_0218_fixed_step.log",
+                },
+                {
+                    "id": "weight_decay_02225_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.385020,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_02225_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_n",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_n.log",
+                },
+            ],
+        }
+        review = evaluate_weight_decay_ridge_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-ridge/logs/overnight/execution-weight-decay-022-ridge"
+            ),
+        )
+        self.assertEqual(review["classification"], "ridge_promising")
+        self.assertEqual(review["best_candidate"]["id"], "weight_decay_02225_fixed_step")
+        self.assertAlmostEqual(review["best_candidate"]["delta"], 0.00013, places=6)
+
+    def test_weight_decay_ridge_fixed_step_bracket_closes_axis_when_candidates_regress(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-ridge.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_m",
+                    "status": "discard",
+                    "val_bpb": 1.385300,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_m.log",
+                },
+                {
+                    "id": "weight_decay_0218_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.386200,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_0218_fixed_step.log",
+                },
+                {
+                    "id": "weight_decay_02225_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.385900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_02225_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_n",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_n.log",
+                },
+            ],
+        }
+        review = evaluate_weight_decay_ridge_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-ridge/logs/overnight/execution-weight-decay-022-ridge"
+            ),
+        )
+        self.assertEqual(review["classification"], "ridge_closed")
+
+    def test_weight_decay_ridge_fixed_step_bracket_flags_inconclusive_drift(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-ridge.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_m",
+                    "status": "discard",
+                    "val_bpb": 1.383000,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_m.log",
+                },
+                {
+                    "id": "weight_decay_0218_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.382700,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_0218_fixed_step.log",
+                },
+                {
+                    "id": "weight_decay_02225_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.382900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_02225_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_n",
+                    "status": "discard",
+                    "val_bpb": 1.385200,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_n.log",
+                },
+            ],
+        }
+        review = evaluate_weight_decay_ridge_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-ridge/logs/overnight/execution-weight-decay-022-ridge"
+            ),
+        )
+        self.assertEqual(review["classification"], "inconclusive_drift")
+        self.assertGreater(float(review["baseline_spread"]), 0.001)
+
+    def test_weight_decay_ridge_fixed_step_bracket_flags_stage_instability(self) -> None:
+        state = {
+            "finished": True,
+            "attempted": 4,
+            "stopped_reason": "queue exhausted",
+            "trust_target_steps": 354,
+            "state_path": "/tmp/overnight_execution-weight-decay-022-ridge.json",
+            "completed": [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_m",
+                    "status": "discard",
+                    "val_bpb": 1.385300,
+                    "num_steps": 353,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_m.log",
+                },
+                {
+                    "id": "weight_decay_0218_fixed_step",
+                    "status": "keep",
+                    "val_bpb": 1.383900,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_0218_fixed_step.log",
+                },
+                {
+                    "id": "weight_decay_02225_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.384700,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/weight_decay_02225_fixed_step.log",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_n",
+                    "status": "discard",
+                    "val_bpb": 1.385100,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                    "log_path": "logs/overnight/execution-weight-decay-022-ridge/candidate_weight_decay_022_fixed_step_repeat_n.log",
+                },
+            ],
+        }
+        review = evaluate_weight_decay_ridge_fixed_step_bracket(
+            state,
+            Path("/tmp/report.md"),
+            Path(
+                "/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-ridge/logs/overnight/execution-weight-decay-022-ridge"
+            ),
+        )
+        self.assertEqual(review["classification"], "stage_instability")
+        self.assertIn("step-mismatch:353", ";".join(review["operational_issues"]))
 
     def test_read_post_reboot_arm_state_preserves_machine_safe_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
