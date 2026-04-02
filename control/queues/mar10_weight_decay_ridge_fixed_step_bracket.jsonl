@@ -1,0 +1,4 @@
+{"assignments": {}, "description": "repeat weight decay 0.22 fixed-step baseline m", "id": "candidate_weight_decay_022_fixed_step_repeat_m"}
+{"assignments": {"WEIGHT_DECAY": "0.218"}, "description": "lower weight decay to 0.218 on the 0.22 candidate", "id": "weight_decay_0218_fixed_step"}
+{"assignments": {"WEIGHT_DECAY": "0.2225"}, "description": "raise weight decay to 0.2225 on the 0.22 candidate", "id": "weight_decay_02225_fixed_step"}
+{"assignments": {}, "description": "repeat weight decay 0.22 fixed-step baseline n", "id": "candidate_weight_decay_022_fixed_step_repeat_n"}
