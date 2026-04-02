@@ -1,0 +1,18 @@
+{
+  "updated_at": "2026-04-01T00:00:00-07:00",
+  "frontier_branch": "",
+  "frontier_commit": "",
+  "frontier_val_bpb": null,
+  "trust_status": "unresolved",
+  "trust_evidence_report": "",
+  "frontier_owner": "",
+  "frontier_owner_role": "",
+  "active_queue": "",
+  "active_plan": "",
+  "latest_handoff": "",
+  "latest_report": "",
+  "next_safe_action": "",
+  "blocked_by": [],
+  "do_not_do": [],
+  "notes": []
+}
