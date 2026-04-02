@@ -36,8 +36,10 @@ from session_status import (  # noqa: E402
     evaluate_weight_decay_confirmation,
     frontier_isolation_decision,
     frontier_soak_decision,
+    historical_confirmation_stage,
     invalid_reboot_launch_orchestration,
     latest_completed_orchestrator_stage,
+    post_confirmation_axis_status,
     read_post_reboot_arm_state,
     repeatability_branching_decision,
 )
@@ -209,7 +211,7 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
         self.assertEqual(payload["environment"]["trust_state"], "conditionally recovered")
         self.assertIn(payload["environment"]["next_stage"], {"define_next_narrow_axis", "weight_decay_confirmation"})
-        self.assertIn(payload["overnight_recommendation"], {"candidate confirmed", "next-day canary earned", "search blocked"})
+        self.assertIn(payload["overnight_recommendation"], {"hold window", "candidate confirmed", "next-day canary earned", "search blocked"})
         self.assertTrue(payload["recommended_next_action"])
 
     def test_default_plan_prefers_backend_isolation_plan(self) -> None:
@@ -616,6 +618,130 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertEqual(env["trust_state"], "conditionally recovered")
         self.assertEqual(env["next_stage"], "define_next_narrow_axis")
         self.assertIn("confirmed lead", env["search_blocked_reason"])
+
+    def test_historical_confirmation_stage_promotes_finished_canary_without_active_stage(self) -> None:
+        stage = historical_confirmation_stage(
+            [
+                {"id": "frontier_repeat_confirmation_c", "val_bpb": 1.384847, "status_class": "post-train-overrun", "num_steps": 357},
+                {"id": "weight_decay_repeat_022_confirmation_c", "val_bpb": 1.380148, "status_class": "post-train-overrun", "num_steps": 369},
+                {"id": "weight_decay_repeat_022_confirmation_d", "val_bpb": 1.384010, "status_class": "post-train-overrun", "num_steps": 360},
+            ]
+        )
+        self.assertIsNotNone(stage)
+        self.assertTrue(stage["confirmed_lead"])
+        self.assertEqual(stage["next_stage"], "define_next_narrow_axis")
+
+    def test_post_confirmation_axis_status_marks_adjacent_axes_resolved(self) -> None:
+        status = post_confirmation_axis_status(
+            [
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_g",
+                    "status": "discard",
+                    "val_bpb": 1.385441,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "scalar_lr_0475_fixed_step_confirmation_c",
+                    "status": "discard",
+                    "val_bpb": 1.385062,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "scalar_lr_0475_fixed_step_confirmation_d",
+                    "status": "discard",
+                    "val_bpb": 1.385106,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_h",
+                    "status": "discard",
+                    "val_bpb": 1.385243,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_i",
+                    "status": "discard",
+                    "val_bpb": 1.385253,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "scalar_lr_048125_fixed_step_confirmation_c",
+                    "status": "discard",
+                    "val_bpb": 1.388677,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "scalar_lr_048125_fixed_step_confirmation_d",
+                    "status": "discard",
+                    "val_bpb": 1.388017,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_j",
+                    "status": "discard",
+                    "val_bpb": 1.385252,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_k",
+                    "status": "discard",
+                    "val_bpb": 1.385447,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "unembedding_lr_0047_on_weight_decay_022_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.388063,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "unembedding_lr_0048_on_weight_decay_022_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.387149,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_l",
+                    "status": "discard",
+                    "val_bpb": 1.385447,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+            ]
+        )
+        self.assertEqual(status["scalar_0475"]["classification"], "promising")
+        self.assertEqual(status["scalar_048125"]["classification"], "closed")
+        self.assertEqual(status["unembedding"]["classification"], "closed")
+        self.assertTrue(status["all_adjacent_axes_resolved"])
+
+    def test_recommended_action_holds_window_after_closed_adjacent_axes(self) -> None:
+        payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
+        self.assertEqual(payload["environment"]["next_stage"], "define_next_narrow_axis")
+        self.assertEqual(payload["overnight_recommendation"], "hold window")
+        self.assertIn("no overnight run tonight", payload["recommended_next_action"])
 
     def test_scalar_candidate_bracket_promotes_best_scalar(self) -> None:
         state = {

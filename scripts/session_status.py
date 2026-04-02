@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from autoresearch_lib import (
+    COMPLETION_FAILURE_CLASSES,
     DEFAULT_CONTROL_ROOT,
     DEFAULT_TARGET_ROOT,
     MATERIAL_WIN_THRESHOLD,
+    REPEATABILITY_SPREAD_THRESHOLD,
+    STALL_FAILURE_CLASSES,
     artifact_paths,
     axis_from_item_id,
     best_nonkeep_by_axis,
@@ -365,6 +368,171 @@ def evaluate_weight_decay_confirmation(items: list[dict[str, Any]]) -> dict[str,
     return result
 
 
+def _is_clean_fixed_step_repeatability_item(item: dict[str, Any] | None, required_steps: int = 354) -> bool:
+    if not item:
+        return False
+    if item.get("status") == "crash":
+        return False
+    if item.get("runner_abort_reason"):
+        return False
+    if item.get("completion_error_phase") or item.get("completion_error_type") or item.get("completion_error_message"):
+        return False
+    status_class = str(item.get("status_class") or "")
+    if status_class in STALL_FAILURE_CLASSES or status_class in COMPLETION_FAILURE_CLASSES:
+        return False
+    num_steps = item.get("num_steps")
+    if num_steps is None or int(num_steps) != required_steps:
+        return False
+    completion_phase = item.get("completion_phase")
+    if completion_phase is not None and completion_phase != "post_summary":
+        return False
+    return item.get("val_bpb") is not None
+
+
+def _stable_pair_assessment(
+    items_by_id: dict[str, dict[str, Any]],
+    baseline_ids: tuple[str, str],
+    candidate_ids: tuple[str, str],
+) -> dict[str, Any] | None:
+    baseline_items = [items_by_id.get(item_id) for item_id in baseline_ids]
+    candidate_items = [items_by_id.get(item_id) for item_id in candidate_ids]
+    if not all(_is_clean_fixed_step_repeatability_item(item) for item in baseline_items + candidate_items):
+        return None
+    baseline_vals = [float(item["val_bpb"]) for item in baseline_items]
+    candidate_vals = [float(item["val_bpb"]) for item in candidate_items]
+    baseline_mean = sum(baseline_vals) / len(baseline_vals)
+    candidate_mean = sum(candidate_vals) / len(candidate_vals)
+    baseline_spread = max(baseline_vals) - min(baseline_vals)
+    candidate_spread = max(candidate_vals) - min(candidate_vals)
+    delta = baseline_mean - candidate_mean
+    if baseline_spread > REPEATABILITY_SPREAD_THRESHOLD or candidate_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        classification = "inconclusive_drift"
+    elif delta > MATERIAL_WIN_THRESHOLD:
+        classification = "confirmed"
+    elif delta > 0.0:
+        classification = "promising"
+    else:
+        classification = "closed"
+    return {
+        "baseline_mean": baseline_mean,
+        "candidate_mean": candidate_mean,
+        "baseline_spread": baseline_spread,
+        "candidate_spread": candidate_spread,
+        "delta": delta,
+        "classification": classification,
+    }
+
+
+def _stable_bracket_best_candidate(
+    items_by_id: dict[str, dict[str, Any]],
+    baseline_ids: tuple[str, str],
+    candidate_ids: tuple[str, ...],
+) -> dict[str, Any] | None:
+    baseline_items = [items_by_id.get(item_id) for item_id in baseline_ids]
+    if not all(_is_clean_fixed_step_repeatability_item(item) for item in baseline_items):
+        return None
+    baseline_vals = [float(item["val_bpb"]) for item in baseline_items]
+    baseline_mean = sum(baseline_vals) / len(baseline_vals)
+    baseline_spread = max(baseline_vals) - min(baseline_vals)
+    if baseline_spread > REPEATABILITY_SPREAD_THRESHOLD:
+        return {
+            "baseline_mean": baseline_mean,
+            "baseline_spread": baseline_spread,
+            "best_delta": None,
+            "best_id": None,
+            "classification": "inconclusive_drift",
+        }
+    candidates: list[dict[str, Any]] = []
+    for item_id in candidate_ids:
+        item = items_by_id.get(item_id)
+        if not _is_clean_fixed_step_repeatability_item(item):
+            continue
+        value = float(item["val_bpb"])
+        candidates.append({"id": item_id, "val_bpb": value, "delta": baseline_mean - value})
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda item: float(item["delta"]))
+    if float(best["delta"]) > MATERIAL_WIN_THRESHOLD:
+        classification = "promoted"
+    elif float(best["delta"]) > 0.0:
+        classification = "promising"
+    else:
+        classification = "closed"
+    return {
+        "baseline_mean": baseline_mean,
+        "baseline_spread": baseline_spread,
+        "best_delta": float(best["delta"]),
+        "best_id": str(best["id"]),
+        "classification": classification,
+    }
+
+
+def post_confirmation_axis_status(repeatability_results: list[dict[str, Any]]) -> dict[str, Any]:
+    items_by_id = {
+        str(item.get("id")): item
+        for item in repeatability_results
+        if item.get("id")
+    }
+    scalar_0475 = _stable_pair_assessment(
+        items_by_id,
+        ("candidate_weight_decay_022_fixed_step_repeat_g", "candidate_weight_decay_022_fixed_step_repeat_h"),
+        ("scalar_lr_0475_fixed_step_confirmation_c", "scalar_lr_0475_fixed_step_confirmation_d"),
+    )
+    scalar_048125 = _stable_pair_assessment(
+        items_by_id,
+        ("candidate_weight_decay_022_fixed_step_repeat_i", "candidate_weight_decay_022_fixed_step_repeat_j"),
+        ("scalar_lr_048125_fixed_step_confirmation_c", "scalar_lr_048125_fixed_step_confirmation_d"),
+    )
+    unembedding = _stable_bracket_best_candidate(
+        items_by_id,
+        ("candidate_weight_decay_022_fixed_step_repeat_k", "candidate_weight_decay_022_fixed_step_repeat_l"),
+        (
+            "unembedding_lr_0047_on_weight_decay_022_fixed_step",
+            "unembedding_lr_0048_on_weight_decay_022_fixed_step",
+        ),
+    )
+    scalar_exhausted = bool(
+        scalar_0475
+        and scalar_0475.get("classification") in {"promising", "closed"}
+        and scalar_048125
+        and scalar_048125.get("classification") == "closed"
+    )
+    unembedding_closed = bool(unembedding and unembedding.get("classification") == "closed")
+    return {
+        "scalar_0475": scalar_0475,
+        "scalar_048125": scalar_048125,
+        "unembedding": unembedding,
+        "scalar_exhausted": scalar_exhausted,
+        "unembedding_closed": unembedding_closed,
+        "all_adjacent_axes_resolved": scalar_exhausted and unembedding_closed,
+    }
+
+
+def historical_confirmation_stage(repeatability_results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    confirmation_items = [
+        item
+        for item in repeatability_results
+        if str(item.get("id") or "").startswith("frontier_repeat_confirmation")
+        or str(item.get("id") or "").startswith("weight_decay_repeat_022_confirmation")
+    ]
+    if not confirmation_items:
+        return None
+    evaluation = evaluate_weight_decay_confirmation(confirmation_items)
+    if not evaluation.get("passed"):
+        return None
+    return {
+        "stage_id": "weight_decay_confirmation",
+        "role": "confirmation",
+        "passed": bool(evaluation["passed"]),
+        "reason": evaluation["reason"],
+        "failure_class": evaluation.get("failure_class"),
+        "evaluation": evaluation,
+        "confirmed_lead": evaluation.get("confirmed_lead"),
+        "weight_decay_better": evaluation.get("weight_decay_better"),
+        "next_stage": evaluation.get("next_stage"),
+    }
+
+
 def queue_matches(context: dict[str, Any], queue_path: str | None, suffix: str) -> bool:
     if not queue_path:
         return False
@@ -454,10 +622,13 @@ def environment_status(
     latest_backend = latest_completed_orchestrator_stage(orchestrator_state, "backend_isolation")
     latest_repeat = latest_completed_orchestrator_stage(orchestrator_state, "repeatability")
     latest_confirmation = finished_active if finished_active and finished_active["role"] == "confirmation" else None
+    if not latest_confirmation:
+        latest_confirmation = historical_confirmation_stage(repeatability_results)
     if not latest_backend and finished_active and finished_active["role"] == "backend_isolation":
         latest_backend = finished_active
     if not latest_repeat and finished_active and finished_active["role"] == "repeatability":
         latest_repeat = finished_active
+    post_confirmation_axes = post_confirmation_axis_status(repeatability_results)
     state = "untrusted"
     blocked_reason: str | None = None
     next_stage: str | None = None
@@ -470,10 +641,17 @@ def environment_status(
         state = "conditionally recovered"
         next_stage = str(latest_confirmation.get("next_stage") or "define_next_narrow_axis")
         if latest_confirmation.get("passed") and latest_confirmation.get("confirmed_lead"):
-            blocked_reason = (
-                "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead; "
-                "define the next narrow axis before reopening broader search"
-            )
+            if post_confirmation_axes.get("all_adjacent_axes_resolved"):
+                blocked_reason = (
+                    "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead, "
+                    "scalar is exhausted, and unembedding is closed; no overnight run is recommended "
+                    "until the next narrow axis is deliberately designed"
+                )
+            else:
+                blocked_reason = (
+                    "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead; "
+                    "define the next narrow axis before reopening broader search"
+                )
         elif latest_confirmation.get("passed"):
             blocked_reason = (
                 "bounded canary resolved cleanly but did not fully confirm `WEIGHT_DECAY=0.22`; "
@@ -541,6 +719,7 @@ def environment_status(
         "latest_backend_isolation": latest_backend,
         "latest_repeatability_stage": latest_repeat,
         "latest_confirmation_stage": latest_confirmation,
+        "post_confirmation_axes": post_confirmation_axes,
         "search_blocked_reason": blocked_reason,
         "next_stage": next_stage,
         "bundle_path": bundle_path,
@@ -600,6 +779,9 @@ def overnight_recommendation(
         return "search blocked"
     latest_confirmation = environment.get("latest_confirmation_stage")
     if latest_confirmation and latest_confirmation.get("passed") and latest_confirmation.get("confirmed_lead"):
+        post_confirmation_axes = environment.get("post_confirmation_axes") or {}
+        if post_confirmation_axes.get("all_adjacent_axes_resolved"):
+            return "hold window"
         return "candidate confirmed"
     if latest_confirmation and latest_confirmation.get("passed"):
         return "candidate still narrow"
@@ -701,6 +883,7 @@ def recommended_next_action(
     latest_backend = environment.get("latest_backend_isolation")
     latest_repeat = environment.get("latest_repeatability_stage")
     latest_confirmation = environment.get("latest_confirmation_stage")
+    post_confirmation_axes = environment.get("post_confirmation_axes") or {}
     runner_error = str(post_reboot_handoff.get("runner_error") or "")
     if blockers:
         return "do not launch autonomous stages until blockers are cleared: " + "; ".join(blockers)
@@ -726,6 +909,13 @@ def recommended_next_action(
                 f"before reopening the loop: {latest_confirmation.get('reason')}"
             )
         if latest_confirmation.get("confirmed_lead"):
+            if post_confirmation_axes.get("all_adjacent_axes_resolved"):
+                return (
+                    "no overnight run tonight; `WEIGHT_DECAY=0.22` is the confirmed lead, "
+                    "scalar is exhausted (`0.475` sub-threshold, `0.48125` closed), and "
+                    "unembedding is closed. Keep broad search closed, publish the distilled verdict, "
+                    "and design the next bounded axis for a later run window."
+                )
             return (
                 "bounded confirmation canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead. "
                 "Keep broad search closed and define the next narrow axis around the confirmed candidate."
