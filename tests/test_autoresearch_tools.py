@@ -211,7 +211,8 @@ class AutoresearchToolTests(unittest.TestCase):
 
     def test_session_status_exposes_frontier_and_next_action(self) -> None:
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
-        self.assertEqual(payload["frontier"]["current_best_commit"], "5b486fb")
+        self.assertEqual(payload["frontier"]["current_best_commit"], "52769ae")
+        self.assertAlmostEqual(payload["frontier"]["current_best_val"], 1.384010, places=6)
         self.assertEqual(payload["environment"]["trust_state"], "conditionally recovered")
         self.assertIn(payload["environment"]["next_stage"], {"define_next_narrow_axis", "weight_decay_confirmation"})
         self.assertIn(payload["overnight_recommendation"], {"hold window", "candidate confirmed", "next-day canary earned", "search blocked"})
@@ -733,18 +734,54 @@ class AutoresearchToolTests(unittest.TestCase):
                     "status_class": "post-train-overrun",
                     "completion_phase": "post_summary",
                 },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_m",
+                    "status": "discard",
+                    "val_bpb": 1.385364,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "weight_decay_0218_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.387202,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "weight_decay_02225_fixed_step",
+                    "status": "discard",
+                    "val_bpb": 1.386019,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
+                {
+                    "id": "candidate_weight_decay_022_fixed_step_repeat_n",
+                    "status": "discard",
+                    "val_bpb": 1.385398,
+                    "num_steps": 354,
+                    "status_class": "post-train-overrun",
+                    "completion_phase": "post_summary",
+                },
             ]
         )
         self.assertEqual(status["scalar_0475"]["classification"], "promising")
         self.assertEqual(status["scalar_048125"]["classification"], "closed")
         self.assertEqual(status["unembedding"]["classification"], "closed")
+        self.assertEqual(status["ridge"]["classification"], "closed")
         self.assertTrue(status["all_adjacent_axes_resolved"])
 
     def test_recommended_action_holds_window_after_closed_adjacent_axes(self) -> None:
         payload = build_session_payload(WORKSPACE_ROOT, "autoresearch/mar10", CONTROL_ROOT, 1.3880, 4)
         self.assertEqual(payload["environment"]["next_stage"], "define_next_narrow_axis")
         self.assertEqual(payload["overnight_recommendation"], "hold window")
-        self.assertIn("no overnight run tonight", payload["recommended_next_action"])
+        self.assertIn("no overnight run today", payload["recommended_next_action"])
+        self.assertIn("ridge is closed", payload["recommended_next_action"])
+        self.assertIn("second Mac", payload["recommended_next_action"])
+        self.assertIn("ridge is closed", payload["environment"]["search_blocked_reason"])
 
     def test_scalar_candidate_bracket_promotes_best_scalar(self) -> None:
         state = {

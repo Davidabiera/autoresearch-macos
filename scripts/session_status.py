@@ -82,6 +82,12 @@ def load_default_plan(paths: dict[str, Any]) -> dict[str, Any] | None:
     return load_json(Path(paths["default_plan"]))
 
 
+def load_frontier_ledger(control_root: Path | None) -> dict[str, Any] | None:
+    if control_root is None:
+        return None
+    return load_json(control_root / "state" / "frontier.json")
+
+
 def current_boot_epoch() -> int | None:
     try:
         proc = subprocess.run(
@@ -491,6 +497,14 @@ def post_confirmation_axis_status(repeatability_results: list[dict[str, Any]]) -
             "unembedding_lr_0048_on_weight_decay_022_fixed_step",
         ),
     )
+    ridge = _stable_bracket_best_candidate(
+        items_by_id,
+        ("candidate_weight_decay_022_fixed_step_repeat_m", "candidate_weight_decay_022_fixed_step_repeat_n"),
+        (
+            "weight_decay_0218_fixed_step",
+            "weight_decay_02225_fixed_step",
+        ),
+    )
     scalar_exhausted = bool(
         scalar_0475
         and scalar_0475.get("classification") in {"promising", "closed"}
@@ -498,13 +512,16 @@ def post_confirmation_axis_status(repeatability_results: list[dict[str, Any]]) -
         and scalar_048125.get("classification") == "closed"
     )
     unembedding_closed = bool(unembedding and unembedding.get("classification") == "closed")
+    ridge_closed = bool(ridge and ridge.get("classification") == "closed")
     return {
         "scalar_0475": scalar_0475,
         "scalar_048125": scalar_048125,
         "unembedding": unembedding,
+        "ridge": ridge,
         "scalar_exhausted": scalar_exhausted,
         "unembedding_closed": unembedding_closed,
-        "all_adjacent_axes_resolved": scalar_exhausted and unembedding_closed,
+        "ridge_closed": ridge_closed,
+        "all_adjacent_axes_resolved": scalar_exhausted and unembedding_closed and ridge_closed,
     }
 
 
@@ -644,8 +661,8 @@ def environment_status(
             if post_confirmation_axes.get("all_adjacent_axes_resolved"):
                 blocked_reason = (
                     "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead, "
-                    "scalar is exhausted, and unembedding is closed; no overnight run is recommended "
-                    "until the next narrow axis is deliberately designed"
+                    "scalar is exhausted, unembedding is closed, and ridge is closed; no overnight run is recommended "
+                    "until the second Mac proves clean bootstrap and a materially different axis is deliberately designed"
                 )
             else:
                 blocked_reason = (
@@ -911,10 +928,11 @@ def recommended_next_action(
         if latest_confirmation.get("confirmed_lead"):
             if post_confirmation_axes.get("all_adjacent_axes_resolved"):
                 return (
-                    "no overnight run tonight; `WEIGHT_DECAY=0.22` is the confirmed lead, "
-                    "scalar is exhausted (`0.475` sub-threshold, `0.48125` closed), and "
-                    "unembedding is closed. Keep broad search closed, publish the distilled verdict, "
-                    "and design the next bounded axis for a later run window."
+                    "no overnight run today; `WEIGHT_DECAY=0.22` is the confirmed lead, "
+                    "scalar is exhausted (`0.475` sub-threshold, `0.48125` closed), "
+                    "unembedding is closed, and ridge is closed. Keep broad search closed, "
+                    "bootstrap the second Mac as a validation node from the committed control packet, "
+                    "and do not define or launch a new research axis until that proof passes."
                 )
             return (
                 "bounded confirmation canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead. "
@@ -1031,6 +1049,7 @@ def build_payload(
     context = collect_frontier_context(target_root, branch, control_root=control_root)
     paths = artifact_paths(target_root, branch, control_root=control_root, tag=context["tag"])
     frontier = build_frontier_payload(target_root, branch, control_root)
+    frontier_ledger = load_frontier_ledger(control_root)
     context["current_best_val"] = frontier["current_best_val"]
     active_run, active_state = load_active_state(paths)
     active_run_is_interrupted = active_run_interrupted(active_run)
@@ -1058,6 +1077,14 @@ def build_payload(
         orchestrator_is_interrupted,
         post_reboot_handoff,
     )
+    if (
+        frontier_ledger
+        and (environment.get("latest_confirmation_stage") or {}).get("confirmed_lead")
+        and frontier_ledger.get("frontier_commit")
+        and frontier_ledger.get("frontier_val_bpb") is not None
+    ):
+        frontier["current_best_commit"] = str(frontier_ledger["frontier_commit"])[:7]
+        frontier["current_best_val"] = round(float(frontier_ledger["frontier_val_bpb"]), 6)
     exploration_recent = context["gated_results"][-5:]
     repeatability_recent = repeatability_results[-5:]
     noncanonical_recent = noncanonical_signals[-5:]
@@ -1177,13 +1204,21 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
 
     lines.extend(["", "## Orchestrator", ""])
     orchestrator_state = payload["orchestrator_state"]
+    latest_confirmation = environment.get("latest_confirmation_stage")
+    post_confirmation_axes = environment.get("post_confirmation_axes") or {}
     if not orchestrator_state:
         lines.append("- none")
     else:
+        orchestrator_next_action = orchestrator_state.get("next_action")
+        if latest_confirmation and latest_confirmation.get("confirmed_lead") and post_confirmation_axes.get("all_adjacent_axes_resolved"):
+            orchestrator_next_action = (
+                "superseded by post-ridge closure; no overnight run today. "
+                "Bootstrap the second Mac as a validation node before selecting a materially different axis."
+            )
         lines.append(f"- plan id: `{orchestrator_state.get('plan_id')}`")
         lines.append(f"- finished: `{str(bool(orchestrator_state.get('finished'))).lower()}`")
         lines.append(f"- current stage: `{orchestrator_state.get('current_stage_id')}`")
-        lines.append(f"- next action: `{orchestrator_state.get('next_action')}`")
+        lines.append(f"- next action: `{orchestrator_next_action}`")
         if payload["orchestrator_interrupted"]:
             lines.append("- interrupted: `true`")
         completed_stages = orchestrator_state.get("completed_stages") or []
