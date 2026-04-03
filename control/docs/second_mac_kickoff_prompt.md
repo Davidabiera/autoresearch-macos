@@ -9,6 +9,7 @@ Read these files first:
 - program.md
 - control/docs/parallel_macos_bootstrap.md
 - control/docs/mar10_frontier_declaration_20260402.md
+- control/docs/mar10_second_mac_bootstrap_focus_20260403.md
 - control/docs/parallel_macos_ramp_up_brief_20260402.md
 - control/docs/second_mac_bootstrap_checklist_20260402.md
 - control/state/frontier.json if it exists, otherwise control/docs/frontier_ledger_template.json
@@ -35,6 +36,7 @@ Report these fields before taking action:
 - assigned worktree path
 - frontier branch from the ledger
 - frontier commit from the ledger
+- frontier val_bpb from the ledger
 - trust status from the ledger
 - active queue from the ledger
 - next safe action from the ledger

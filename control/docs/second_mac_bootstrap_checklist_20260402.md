@@ -53,6 +53,7 @@ git worktree add -b codex/execution-baseline-mar10 worktrees/execution-baseline-
   - `program.md`
   - `control/docs/parallel_macos_bootstrap.md`
   - `control/docs/mar10_frontier_declaration_20260402.md`
+  - `control/docs/mar10_second_mac_bootstrap_focus_20260403.md`
   - `control/docs/parallel_macos_ramp_up_brief_20260402.md`
   - `control/docs/second_mac_kickoff_prompt.md`
 - instantiate local `control/state/frontier.json` from the template plus the frontier declaration
@@ -65,6 +66,6 @@ git worktree add -b codex/execution-baseline-mar10 worktrees/execution-baseline-
 - `uv sync` completes
 - `uv run prepare.py` completes, or the data cache is intentionally preseeded
 - control, reliability, and execution-baseline worktrees exist and are clean
-- the second Mac can state the canonical frontier branch, commit, trusted evidence, and next safe action without using chat memory
+- the second Mac can state the canonical frontier branch, commit, `val_bpb`, trusted evidence, and next safe action without using chat memory
 - no execution branch is owned by both machines
 - no new experiment starts before one clean validation-oriented proof task completes

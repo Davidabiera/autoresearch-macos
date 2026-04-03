@@ -85,6 +85,7 @@ Do not run two independent frontier-mutating loops against the same branch.
    - `program.md`
    - `control/docs/parallel_macos_bootstrap.md`
    - `control/docs/mar10_frontier_declaration_20260402.md`
+   - `control/docs/mar10_second_mac_bootstrap_focus_20260403.md`
    - `control/docs/parallel_macos_ramp_up_brief_20260402.md`
    - `control/docs/second_mac_bootstrap_checklist_20260402.md`
    - `control/docs/second_mac_kickoff_prompt.md`
@@ -154,6 +155,7 @@ If both machines need the same branch:
 ## Companion files in this pack
 
 - `control/docs/mar10_frontier_declaration_20260402.md`
+- `control/docs/mar10_second_mac_bootstrap_focus_20260403.md`
 - `control/docs/parallel_macos_ramp_up_brief_20260402.md`
 - `control/docs/second_mac_bootstrap_checklist_20260402.md`
 - `control/docs/second_mac_kickoff_prompt.md`
