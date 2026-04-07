@@ -662,7 +662,7 @@ def environment_status(
                 blocked_reason = (
                     "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead, "
                     "scalar is exhausted, unembedding is closed, and ridge is closed; no overnight run is recommended "
-                    "until the second Mac proves clean bootstrap and a materially different axis is deliberately designed"
+                    "until the operating review is complete and a materially different axis is deliberately designed"
                 )
             else:
                 blocked_reason = (
@@ -931,8 +931,8 @@ def recommended_next_action(
                     "no overnight run today; `WEIGHT_DECAY=0.22` is the confirmed lead, "
                     "scalar is exhausted (`0.475` sub-threshold, `0.48125` closed), "
                     "unembedding is closed, and ridge is closed. Keep broad search closed, "
-                    "bootstrap the second Mac as a validation node from the committed control packet, "
-                    "and do not define or launch a new research axis until that proof passes."
+                    "use the review window to reconstruct `mar10` and `mar24-night`, classify active versus archival branches, "
+                    "and reset work tracking in Linear before defining any new research axis."
                 )
             return (
                 "bounded confirmation canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead. "
@@ -1213,7 +1213,7 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
         if latest_confirmation and latest_confirmation.get("confirmed_lead") and post_confirmation_axes.get("all_adjacent_axes_resolved"):
             orchestrator_next_action = (
                 "superseded by post-ridge closure; no overnight run today. "
-                "Bootstrap the second Mac as a validation node before selecting a materially different axis."
+                "Use the review window to reconstruct mar10 plus mar24-night and reset work tracking before selecting a materially different axis."
             )
         lines.append(f"- plan id: `{orchestrator_state.get('plan_id')}`")
         lines.append(f"- finished: `{str(bool(orchestrator_state.get('finished'))).lower()}`")
