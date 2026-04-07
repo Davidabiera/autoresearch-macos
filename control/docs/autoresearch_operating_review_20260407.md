@@ -8,7 +8,7 @@ Working conclusion:
 - `mar10` is a coherent finished research loop
 - plain `WEIGHT_DECAY=0.22` at `52769ae` is the surviving confirmed frontier
 - scalar, unembedding, and nearby ridge follow-ups are closed or sub-threshold
-- `mar24-night` is not an active frontier lane today; it is a historical research branch with local clutter and unresolved indexing
+- `mar24-night` is archival historical evidence, not an active frontier lane
 - the main problem is no longer experiment logic; it is workflow sprawl and weak milestone/ownership visibility
 
 ## What Was Actually Achieved
@@ -33,15 +33,21 @@ Primary durable references:
 
 - the overnight line materially improved the then-current best value from `1.388021` to `1.378980`
 - subsequent daytime follow-up and repeatability work produced useful evidence, but the line never got re-indexed into the current `mar10` control system
-- the branch remains present and pushed, but current visibility is weak because the root workspace still carries untracked logs and handoff residue
+- the branch remains present and pushed as evidence, but it is now archived rather than treated as live work
 
 Primary durable references:
 - [mar24_night_closeout.md](/Users/davidabiera/Projects/team/autoresearch-macos/docs/reference/workflows/mar24_night_closeout.md)
-- [HANDOFF_mar10.md](/Users/davidabiera/Projects/team/autoresearch-macos/HANDOFF_mar10.md)
+- [mar24_night_archival_proof_20260407.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/mar24_night_archival_proof_20260407.md)
+- [mar24_night_archival_decision_20260407.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/mar24_night_archival_decision_20260407.md)
 
 ## What Is Active Versus Merely Present
 
 ### Worktrees
+
+- `general repo orientation`
+  - [/Users/davidabiera/Projects/team/autoresearch-macos](/Users/davidabiera/Projects/team/autoresearch-macos)
+    - current branch `main`
+    - no longer used as the `mar24-night` worktree
 
 - `canonical`
   - [execution-weight-decay-022-unembedding-followup](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-unembedding-followup)
@@ -60,10 +66,7 @@ Primary durable references:
   - [execution-weight-decay-022-scalar-048125-confirmation](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-weight-decay-022-scalar-048125-confirmation)
 
 - `stale/unindexed`
-  - [/Users/davidabiera/Projects/team/autoresearch-macos](/Users/davidabiera/Projects/team/autoresearch-macos)
-    - current branch `autoresearch/mar24-night`
-    - contains historical value, but current state is obscured by untracked logs and handoff residue
-    - needs an explicit decision: archival closeout or re-entry as a live line
+  - none
 
 ### Branch families
 
@@ -76,10 +79,10 @@ Primary durable references:
   - `codex/execution-baseline-mar10`
   - `codex/execution-weight-decay-022-ridge`
   - `codex/execution-weight-decay-022-scalar*`
-
-- `historical staging or stale/unindexed`
-  - `autoresearch/mar10`
   - `autoresearch/mar24-night`
+
+- `historical staging`
+  - `autoresearch/mar10`
   - `codex/frontier-baseline-stability-mar10`
   - `codex/frontier-isolation-mar10`
   - `codex/canary-*`
@@ -115,18 +118,17 @@ Working rule from this review:
 - too many branches, worktrees, plans, and queues exist without a single active-state board
 - local-only coordination surfaces still matter for current state, which weakens away-from-chat visibility
 - branch presence is being mistaken for activity
-- the root `mar24-night` workspace still behaves like an ambient scratchpad instead of an explicitly classified line
+- historical lanes can still leak into active mental models if the root workspace is left on them
 - milestone intent is implicit in chat and docs, not explicit in a tracked work system
 - prepared control packages accumulate faster than explicit decisions to run or retire them
 
 ## What Remains Unclear
 
-- whether `mar24-night` should be archived as closed historical work or re-opened as a real lane
 - whether the next step after `mar10` is pause/consolidation or a materially different axis
 - which historical staging branches deserve a durable index versus simple archival treatment
 
 ## Minimum Next Decisions
 
-1. Decide whether `mar24-night` becomes `archival` or `live`.
-2. Decide whether the next phase is `pause and consolidate` or `design one materially different axis`.
-3. Move branch/worktree ownership and status out of ambient memory and into the Linear project plus repo proof paths.
+1. Decide whether the next phase is `pause and consolidate` or `design one materially different axis`.
+2. Move branch/worktree ownership and status out of ambient memory and into the Linear project plus repo proof paths.
+3. Keep the root workspace off archival branches.
