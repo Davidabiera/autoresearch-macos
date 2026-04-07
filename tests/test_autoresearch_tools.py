@@ -781,7 +781,7 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertIn("no overnight run today", payload["recommended_next_action"])
         self.assertIn("ridge is closed", payload["recommended_next_action"])
         self.assertIn("Linear", payload["recommended_next_action"])
-        self.assertIn("mar24-night", payload["recommended_next_action"])
+        self.assertIn("archival", payload["recommended_next_action"])
         self.assertIn("ridge is closed", payload["environment"]["search_blocked_reason"])
 
     def test_scalar_candidate_bracket_promotes_best_scalar(self) -> None:
