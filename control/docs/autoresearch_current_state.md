@@ -41,4 +41,5 @@ These lanes remain available for audit. They are not active run lanes.
 - finish M2 control work before deciding any next research move
 - keep `52769ae` parked as the frontier
 - do not define or queue another run yet
+- use [/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/run_gating_checklist.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/run_gating_checklist.md) as the hard gate before any future run
 - after M2 closes, use Linear to decide `pause/consolidate` versus one materially different new axis

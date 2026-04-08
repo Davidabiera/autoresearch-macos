@@ -65,6 +65,9 @@ Do not start a run without:
 - a repo plan/queue
 - a named reviewer surface
 
+Concrete repo rule:
+- [/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/run_gating_checklist.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/run_gating_checklist.md)
+
 ## Milestones
 
 Created milestones:
