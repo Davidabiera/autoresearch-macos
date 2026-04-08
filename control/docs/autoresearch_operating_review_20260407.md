@@ -11,6 +11,9 @@ Working conclusion:
 - `mar24-night` is archival historical evidence, not an active frontier lane
 - the main problem is no longer experiment logic; it is workflow sprawl and weak milestone/ownership visibility
 
+Preferred operator entrypoint:
+- [autoresearch_current_state.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/autoresearch_current_state.md)
+
 ## What Was Actually Achieved
 
 ### `mar10`

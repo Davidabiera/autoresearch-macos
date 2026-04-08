@@ -16,6 +16,9 @@ Repo control docs remain the technical source of truth for:
 - plan/queue definitions
 - reviewer outputs
 
+Default repo entrypoint for active state:
+- [/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/autoresearch_current_state.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/autoresearch_current_state.md)
+
 Linear tracks:
 - milestones
 - issue ownership

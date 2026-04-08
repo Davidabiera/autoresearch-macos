@@ -24,15 +24,18 @@
 ## Next Safe Action
 
 - do not rerun the ridge bracket
-- do not open a new experimental axis before the second Mac proves a clean bootstrap and validation pass
-- use the next work window to durabilize the control docs, bring up the second Mac at the same absolute path, and instantiate its local `frontier.json`, handoff packet, and triage board
+- use [/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/autoresearch_current_state.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/autoresearch_current_state.md) as the current operator entrypoint
+- finish M2 control work before choosing `pause/consolidate` or one materially different new axis
+- do not treat second-Mac bootstrap notes as the current next-step surface
 
-## Rebuild Local `frontier.json` From This Note
+## Historical Local `frontier.json` Rebuild Note
 
-Use this note plus `control/docs/frontier_ledger_template.json` to seed the new machine's local control state with:
+If a local ledger must be rebuilt later, use this note plus `control/docs/frontier_ledger_template.json` and the current-state index. This is a parked historical reference, not the current operator instruction.
+
+Use these values:
 - `frontier_branch = codex/execution-weight-decay-022-unembedding-followup`
 - `frontier_commit = 52769ae`
 - `frontier_val_bpb = 1.384010`
 - `trust_status = passed`
 - `trust_evidence_report = /Users/davidabiera/Projects/team/autoresearch-macos/worktrees/execution-baseline-mar10/reports/overnight_execution-baseline-mar10.md`
-- `next_safe_action = bootstrap the second Mac as a validation node first; do not start free exploration`
+- `next_safe_action = finish M2 control work, then decide pause/consolidation versus one materially different axis`
