@@ -662,7 +662,7 @@ def environment_status(
                 blocked_reason = (
                     "bounded canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead, "
                     "scalar is exhausted, unembedding is closed, and ridge is closed; no overnight run is recommended "
-                    "until the next focus is deliberately selected in Linear and a materially different axis is deliberately designed"
+                    "and the default posture is pause/consolidate on `52769ae`; reopen only if Linear explicitly selects one materially different axis with written acceptance criteria"
                 )
             else:
                 blocked_reason = (
@@ -934,7 +934,8 @@ def recommended_next_action(
                     "treat `mar24-night` as archival evidence, keep the root workspace off archival branches, "
                     "use `autoresearch_current_state.md` as the operator entrypoint, "
                     "use `run_gating_checklist.md` as the hard run gate, "
-                    "and use Linear to choose between pause/consolidation and one materially different next axis."
+                    "default to pause/consolidate on `52769ae`, "
+                    "and reopen only if Linear explicitly selects one materially different axis with written acceptance criteria."
                 )
             return (
                 "bounded confirmation canary resolved cleanly; `WEIGHT_DECAY=0.22` is the confirmed lead. "
@@ -1218,7 +1219,8 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
                 "Treat mar24-night as archival evidence, keep the root workspace off archival branches, "
                 "use autoresearch_current_state.md as the operator entrypoint, "
                 "use run_gating_checklist.md as the hard run gate, "
-                "and use Linear to choose between pause/consolidation and a materially different next axis."
+                "default to pause/consolidate on 52769ae, "
+                "and reopen only if Linear explicitly selects one materially different axis with written acceptance criteria."
             )
         lines.append(f"- plan id: `{orchestrator_state.get('plan_id')}`")
         lines.append(f"- finished: `{str(bool(orchestrator_state.get('finished'))).lower()}`")

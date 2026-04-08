@@ -784,7 +784,9 @@ class AutoresearchToolTests(unittest.TestCase):
         self.assertIn("archival", payload["recommended_next_action"])
         self.assertIn("autoresearch_current_state.md", payload["recommended_next_action"])
         self.assertIn("run_gating_checklist.md", payload["recommended_next_action"])
+        self.assertIn("pause/consolidate", payload["recommended_next_action"])
         self.assertIn("ridge is closed", payload["environment"]["search_blocked_reason"])
+        self.assertIn("pause/consolidate", payload["environment"]["search_blocked_reason"])
 
     def test_scalar_candidate_bracket_promotes_best_scalar(self) -> None:
         state = {
