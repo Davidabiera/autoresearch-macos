@@ -14,6 +14,9 @@ Working conclusion:
 Preferred operator entrypoint:
 - [autoresearch_current_state.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/autoresearch_current_state.md)
 
+Next-phase decision:
+- [mar10_next_phase_decision_20260407.md](/Users/davidabiera/Projects/team/autoresearch-macos/worktrees/control/control/docs/mar10_next_phase_decision_20260407.md)
+
 ## What Was Actually Achieved
 
 ### `mar10`
@@ -127,11 +130,10 @@ Working rule from this review:
 
 ## What Remains Unclear
 
-- whether the next step after `mar10` is pause/consolidation or a materially different axis
 - which historical staging branches deserve a durable index versus simple archival treatment
 
 ## Minimum Next Decisions
 
-1. Decide whether the next phase is `pause and consolidate` or `design one materially different axis`.
-2. Move branch/worktree ownership and status out of ambient memory and into the Linear project plus repo proof paths.
+1. Preserve the `pause and consolidate` default unless a materially different axis is explicitly reopened.
+2. Keep branch/worktree ownership and status out of ambient memory and inside repo proof paths plus Linear state.
 3. Keep the root workspace off archival branches.
