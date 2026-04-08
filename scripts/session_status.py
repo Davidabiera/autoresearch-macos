@@ -932,6 +932,8 @@ def recommended_next_action(
                     "scalar is exhausted (`0.475` sub-threshold, `0.48125` closed), "
                     "unembedding is closed, and ridge is closed. Keep broad search closed, "
                     "treat `mar24-night` as archival evidence, keep the root workspace off archival branches, "
+                    "use `autoresearch_current_state.md` as the operator entrypoint, "
+                    "use `run_gating_checklist.md` as the hard run gate, "
                     "and use Linear to choose between pause/consolidation and one materially different next axis."
                 )
             return (
@@ -1214,6 +1216,8 @@ def render_markdown(payload: dict[str, Any], early_stop_floor: float, early_stop
             orchestrator_next_action = (
                 "superseded by post-ridge closure; no overnight run today. "
                 "Treat mar24-night as archival evidence, keep the root workspace off archival branches, "
+                "use autoresearch_current_state.md as the operator entrypoint, "
+                "use run_gating_checklist.md as the hard run gate, "
                 "and use Linear to choose between pause/consolidation and a materially different next axis."
             )
         lines.append(f"- plan id: `{orchestrator_state.get('plan_id')}`")
